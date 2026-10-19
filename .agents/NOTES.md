@@ -32,10 +32,17 @@
 - 保护卡片：获权审批人可见绑定版本全文，plain_text 且关闭转发；超限拒绝而非截断。已发送内容无法因撤权收回，点击与交付重新授权。
 - 保留 M1：[现场验收](../deploy/m1-acceptance.md) 与历史 CI 独立留存；M1 联调库 schema 3 未迁移，不与当前制品混跑。
 
+## M3 引用消费者切片（2026-10-19）
+
+- 实现：knowledge.Store.Ground 逐条以当前身份 Read，撤权计入 Dropped；ModelContext 标注资料并拒绝超预算；群聊闸门在读取前失败。合同见 [knowledge 第 6—8 条](../contracts/knowledge.md)。
+- 本机验证：WSL `17/agentos-m3` 上定向 TestGround、pnpm test:db、pnpm check 均退出 0（m3-ground-targeted/full-db/check.log）；两项变异（去闸门、吞错为 Dropped）均失败（m3-ground-mutation.log）；`.tools/pg-residue.sh 55440` 测试库/角色残留 0，集群已停止。Windows Go 需 GOCACHE/GOTMPDIR 指向 .tools。
+- 未接入：对话路由、Embedding 提供方、飞书群聊交付。当前无运行路径调用检索。
+- 远端证据：见下一次提交的 CI 记录。
+
 ## 接续 M3 下一切片
 
-1. 接引用消费者：模型上下文组装与交付前对候选逐条 Read 重验，群聊接收范围未确认不输出正文；不缓存正文作授权。
-2. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。原生来源权限同步与游标恢复仍待完成。
+1. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。
+2. 原生来源权限同步与游标恢复仍待完成；引用消费者接入对话与交付须先有 Embedding 来源与群聊接收范围证明。
 
 ## 保留交付环境
 

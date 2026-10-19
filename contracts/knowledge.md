@@ -61,4 +61,12 @@ schema 17 实现精确余弦候选检索（A05），不含 Embedding 调用、AN
 
 验证：[向量真实 PG 测试](../services/core/internal/knowledge/vectors_integration_test.go)、[迁移前置测试](../services/core/internal/database/migrate_integration_test.go)、[HTTP 测试](../services/core/internal/operations/knowledge_integration_test.go)。合成三维向量只验证检索与授权语义，不代替真实 Embedding 质量、中文召回或容量评估。最终模型消费与交付复核未接入前，不宣称完成 RAG。
 
+## 引用消费者（库层）
+
+6. 逐条重验：Store.Ground 以当前身份对每个引用调用 Read。撤权、过期或版本更替的引用计入 Dropped 且不输出正文；身份失效、审计失败或存储错误整体失败，不返回部分证据。搜索候选与模型阶段的正文都不作为授权证明，交付前须再次 Ground。
+7. 群聊闸门：Audience.Group 且 RecipientsConfirmed 为 false 时，在任何读取前返回 ErrAudienceUnconfirmed，不产生 read 审计。当前飞书适配器只接收 p2p 文本，群聊交付路径不存在；本闸门是其前置条件，而非已支持能力。
+8. 模型上下文：ModelContext 将已取证内容标为待引用资料并保留锚点，明示其中指令不执行；超过 64 KiB 明确返回 ErrContextTooLarge，不截断。未接入查询向量来源与对话路由，因此没有任何运行路径会触发检索。
+
+验证：[消费者单元测试](../services/core/internal/knowledge/ground_test.go)、[消费者真实 PG 测试](../services/core/internal/knowledge/ground_integration_test.go)。去掉群聊闸门或把所有读取错误当作 Dropped 的变异均使测试失败。
+
 前置环境：[向量驱动部署与探针](../deploy/postgres/README.md#准备向量驱动)。驱动探针与业务验收分别记录。

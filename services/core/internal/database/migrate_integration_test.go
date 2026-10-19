@@ -120,7 +120,7 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	count, migrateErr := m.Up(ctx)
 	closeErr := m.Close()
-	if migrateErr != nil || closeErr != nil || count != 16 {
+	if migrateErr != nil || closeErr != nil || count != SchemaVersion-1 {
 		t.Fatalf("upgrade count=%d migration=%v close=%v", count, migrateErr, closeErr)
 	}
 	var name string
@@ -169,7 +169,7 @@ func TestUpgradePreservesLegacyTasksAndAudit(t *testing.T) {
 	}
 	count, upErr := m.Up(ctx)
 	closeErr := m.Close()
-	if upErr != nil || closeErr != nil || count != 15 {
+	if upErr != nil || closeErr != nil || count != SchemaVersion-2 {
 		t.Fatalf("upgrade count=%d up=%v close=%v", count, upErr, closeErr)
 	}
 	var preserved bool
@@ -212,7 +212,7 @@ func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, err := m.Up(ctx)
-	if err != nil || count != 14 {
+	if err != nil || count != SchemaVersion-3 {
 		t.Fatalf("migration: %d %v", count, err)
 	}
 	if err := m.Close(); err != nil {
@@ -267,7 +267,7 @@ func TestVectorMigrationRequiresAdministratorExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, upErr := m.Up(ctx)
-	if err := errors.Join(upErr, m.Close()); err != nil || count != 1 {
+	if err := errors.Join(upErr, m.Close()); err != nil || count != SchemaVersion-16 {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
 	db, err := Open(ctx, f.RuntimeURL, 1)

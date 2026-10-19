@@ -2,7 +2,7 @@
 
 ## 准备可信绑定
 
-1. 按 [数据库指南](postgres/README.md) 升级至 schema 17，使用独立运行账户。
+1. 按 [数据库指南](postgres/README.md) 升级至 schema 18，使用独立运行账户。
 2. 创建飞书自建应用与机器人，订阅 `im.message.receive_v1`，配置单聊接收与机器人回复权限。只在测试租户验证，不开启无授权知识源或工具。
 3. 由受控管理员预置 IAM 租户、成员与身份映射；Provider=`feishu`，Issuer=`feishu:<AppID>:<TenantKey>`，Subject 为该应用的用户 OpenID。运行账户无 IAM 写权；当前没有自动注册用户或组织同步。
 4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。

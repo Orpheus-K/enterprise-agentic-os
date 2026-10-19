@@ -2,7 +2,14 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-19，工程 M1、M2 已退出；M3 第三切片实现授权向量候选检索（schema 17），本机全量验证通过，远端 CI 见下；整体蓝图未完成。
+- 进展：2026-10-19，工程 M1、M2 已退出；M3 已完成：知识存储/健康（15—16）、授权向量检索（17）、引用消费者库层、任务清单与基础统计（18）。整体蓝图未完成。
+- 推进计划：①消费者签收 ✔ ②审计查询/统计 ③计算隔离 ④原生来源连接器 ⑤检索接入对话与交付 ⑥SQLite 轻量驱动 ⑦离线安装与备份恢复 ⑧M3 退出验收。
+
+## M3 任务清单与基础统计（schema 18）
+
+- 实现：GET /api/ops/tasks、/api/ops/stats，复用 audit.read；00018 为 audit_reads 增加 scope 且非单任务读取 task_id 为空；新增任务时间窗索引。契约见 [运维契约](../contracts/operations.md#查询任务清单与基础统计)。
+- 本机验证：pnpm test:db、pnpm check 退出 0（m3-report-full-db/check.log）；三项变异（去应用过滤、去游标范围、去留痕）均失败（m3-report-mutation.log）；残留 0，集群已停止。迁移测试的应用条数改为由 database.SchemaVersion 推导。
+- 未覆盖：知识读取/检索统计（knowledge 审计表运行角色仅 INSERT，需单独授权设计）；耗时分位与人力/收益估算不提供。
 - 真源：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md)、[M2 验收](../deploy/m2-acceptance.md)、[知识管道契约](../contracts/knowledge.md)。契约区分已实现存储/检索与未接入来源/Embedding/消费者。
 
 ## 当前 M3 向量检索切片

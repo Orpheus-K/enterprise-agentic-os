@@ -63,6 +63,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		operation = "ops.recovery"
 	case "/api/ops/audit":
 		operation = "ops.audit"
+	case "/api/ops/tasks":
+		operation = "ops.tasks"
+	case "/api/ops/stats":
+		operation = "ops.stats"
 	case "/api/ops/status":
 		operation = "ops.status"
 	case "/api/ops/metrics":
@@ -170,6 +174,17 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err = a.store.ReadAudit(ctx, a.identity, query.task, query.after, query.limit)
+	} else if operation == "ops.tasks" || operation == "ops.stats" {
+		query, parseErr := parseReport(r, operation == "ops.tasks")
+		if parseErr != nil {
+			w.WriteHeader(400)
+			return
+		}
+		if operation == "ops.tasks" {
+			result, err = a.store.ListTasks(ctx, a.identity, query.window, query.after, query.limit)
+		} else {
+			result, err = a.store.Stats(ctx, a.identity, query.window)
+		}
 	} else {
 		if r.URL.RawQuery != "" {
 			w.WriteHeader(400)
@@ -186,7 +201,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
-		case errors.Is(err, conversation.ErrInvalidApproval), errors.Is(err, conversation.ErrInvalidReconciliation), errors.Is(err, knowledge.ErrInvalid):
+		case errors.Is(err, conversation.ErrInvalidApproval), errors.Is(err, conversation.ErrInvalidReconciliation), errors.Is(err, conversation.ErrInvalidReport), errors.Is(err, knowledge.ErrInvalid):
 			w.WriteHeader(400)
 		case errors.Is(err, conversation.ErrTaskNotFound), errors.Is(err, knowledge.ErrUnavailable):
 			w.WriteHeader(404)
@@ -210,6 +225,44 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok = json.NewEncoder(w).Encode(result) == nil
+}
+
+type reportQuery struct {
+	window conversation.ReportWindow
+	after  uuid.UUID
+	limit  int
+}
+
+// parseReport requires from/to as RFC 3339 instants; after/limit are accepted only for paging.
+func parseReport(r *http.Request, paged bool) (reportQuery, error) {
+	q := reportQuery{limit: 50}
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return q, errors.New("invalid query encoding")
+	}
+	for key, v := range values {
+		known := key == "from" || key == "to" || (paged && (key == "after" || key == "limit"))
+		if len(v) != 1 || !known {
+			return q, errors.New("invalid query")
+		}
+	}
+	if q.window.From, err = time.Parse(time.RFC3339, values.Get("from")); err != nil {
+		return q, errors.New("from required")
+	}
+	if q.window.To, err = time.Parse(time.RFC3339, values.Get("to")); err != nil {
+		return q, errors.New("to required")
+	}
+	if values.Has("after") {
+		if q.after, err = uuid.Parse(values.Get("after")); err != nil || q.after == uuid.Nil {
+			return q, errors.New("invalid cursor")
+		}
+	}
+	if values.Has("limit") {
+		if q.limit, err = strconv.Atoi(values.Get("limit")); err != nil || q.limit < 1 || q.limit > 100 {
+			return q, errors.New("invalid limit")
+		}
+	}
+	return q, nil
 }
 
 type auditQuery struct {

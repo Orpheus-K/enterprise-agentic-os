@@ -11,6 +11,8 @@
 | `/api/ops/status` | `status.read` | 连接状态、Worker 状态、存储检查、模型 `not_probed` |
 | `/api/ops/metrics` | `status.read` | OTel 累计调用数、结果分类与耗时直方图；重启归零 |
 | `/api/ops/audit?task_id=...&after=0&limit=50` | `audit.read` | 单任务状态、原因码、时间、Trace_ID；默认 50，最多 100 条 |
+| `/api/ops/tasks?from=...&to=...&after=<task_id>&limit=50` | `audit.read` | 窗口内任务：ID、当前状态、原因码、技能名/版本、创建/更新时间；按 (created_at, id) 分页，最多 100 条 |
+| `/api/ops/stats?from=...&to=...` | `audit.read` | 窗口内创建任务总数、按当前状态计数、这些任务的审批按状态计数 |
 
 - 判定就绪：Worker 运行、当前租户有效且已应用本制品要求的 schema（database.SchemaVersion，与启动检查同源）；长连接须 Connected，断连/重连即不就绪；Webhook Listening 只代表本地可接收，不代表公网配置已验证。
 - 限定就绪：不主动调用计费模型；就绪不承诺端到端业务成功。未配置渠道返回 503；停机和数据库故障不复用旧的就绪缓存。
@@ -20,6 +22,18 @@
 - 限定字段：不返回 Prompt、响应正文、外部用户标识、端点或凭证；分页 ID 是任务内序号，不暴露跨租户全局序列。未知/重复参数与越界分页拒绝。
 - 记录访问：查询与 `channel.audit_reads` 的访问留痕同事务；留痕失败不返回数据。拒绝请求只记观测结果分类，不记录请求中的身份、令牌或参数。
 - 关闭缓存：所有运维和就绪响应 `no-store`；令牌无效/身份撤销 401、能力撤销 403、依赖失败 503，错误正文不含内部详情。
+
+## 查询任务清单与基础统计
+
+schema 18 起，对齐 R15/R18 基础统计、V06/V13：
+
+- 窗口：from/to 均为 RFC 3339 时刻，[from, to) 且不超过 92 天；缺失、倒置、空窗口、超宽、未知或重复参数一律 400。stats 不接受 after/limit。
+- 范围：仅当前租户与配置应用；不返回 Prompt、响应、渠道标识或成员 ID。外租户/外应用/不存在的 after 返回空页，不报错，避免游标探测。
+- 口径：统计只计已落库事实，状态为查询时的当前状态，不是窗口结束时的快照；不含耗时分位、人力或收益估算。知识读取/检索统计尚未开放（运行角色对 knowledge 审计表仅 INSERT）。
+- 留痕：每次查询与 `channel.audit_reads` 同事务写入 scope=`tasks`/`stats`、task_id 为空、返回条数；留痕失败 503 不返回数据。单任务读取须带 task_id（约束保证）。
+- 授权：复用 `audit.read`，因为清单与统计只汇总审计员已可逐任务读取的数据；撤权 403。
+
+验证：[报表真实 PG 测试](../services/core/internal/operations/report_integration_test.go)。去掉应用过滤、游标范围或留痕的变异均使测试失败。
 
 ## 关联执行证据
 

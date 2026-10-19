@@ -19,7 +19,7 @@ type Queries interface {
 }
 
 // SchemaVersion is the only migration version this build serves; startup and readiness share it.
-const SchemaVersion = 17
+const SchemaVersion = 18
 
 type DB struct{ pool *pgxpool.Pool }
 

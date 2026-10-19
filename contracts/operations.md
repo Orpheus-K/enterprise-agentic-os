@@ -12,7 +12,7 @@
 | `/api/ops/metrics` | `status.read` | OTel 累计调用数、结果分类与耗时直方图；重启归零 |
 | `/api/ops/audit?task_id=...&after=0&limit=50` | `audit.read` | 单任务状态、原因码、时间、Trace_ID；默认 50，最多 100 条 |
 
-- 判定就绪：Worker 运行、当前租户有效且 schema 9 可访问；长连接须 Connected，断连/重连即不就绪；Webhook Listening 只代表本地可接收，不代表公网配置已验证。
+- 判定就绪：Worker 运行、当前租户有效且已应用本制品要求的 schema（database.SchemaVersion，与启动检查同源）；长连接须 Connected，断连/重连即不就绪；Webhook Listening 只代表本地可接收，不代表公网配置已验证。
 - 限定就绪：不主动调用计费模型；就绪不承诺端到端业务成功。未配置渠道返回 503；停机和数据库故障不复用旧的就绪缓存。
 - 认证查询：仅接收独立 Bearer 运维令牌；配置绑定 `operator / agentos:ops:<AppID> / Subject`，复用 IAM Resolve。Cookie、查询令牌、用户/租户 Header 均不构成身份。
 - 授权查询：每次重新检查映射、租户、成员及 `iam.operation_grants` 的应用/能力；配置令牌不自动授予权限。运行角色不可写授权表。

@@ -37,7 +37,8 @@
 - 实现：knowledge.Store.Ground 逐条以当前身份 Read，撤权计入 Dropped；ModelContext 标注资料并拒绝超预算；群聊闸门在读取前失败。合同见 [knowledge 第 6—8 条](../contracts/knowledge.md)。
 - 本机验证：WSL `17/agentos-m3` 上定向 TestGround、pnpm test:db、pnpm check 均退出 0（m3-ground-targeted/full-db/check.log）；两项变异（去闸门、吞错为 Dropped）均失败（m3-ground-mutation.log）；`.tools/pg-residue.sh 55440` 测试库/角色残留 0，集群已停止。Windows Go 需 GOCACHE/GOTMPDIR 指向 .tools。
 - 未接入：对话路由、Embedding 提供方、飞书群聊交付。当前无运行路径调用检索。
-- 远端证据：见下一次提交的 CI 记录。
+- 远端证据：3313a87 [CI 39275270620](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39275270620) success（工程检查、真实 PG、驱动探针、race、e2e），日志 .tools/m3-ground-ci.log。本切片签收。
+- 修复就绪：conversation.Ready 写死 schema 16，而启动要求 17，当前制品 /api/ready 恒 503。改为共享 database.SchemaVersion；补“当前 schema 必须就绪”断言，旧代码下该断言失败（Storage:unavailable），修复后通过。全量 test:db 与 check 退出 0（m3-ready-*.log），残留 0。
 
 ## 接续 M3 下一切片
 

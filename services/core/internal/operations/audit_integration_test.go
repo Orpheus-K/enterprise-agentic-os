@@ -196,6 +196,10 @@ func TestOperatorRevocationAndScope(t *testing.T) {
 
 func TestStatusMetricsAndReadAuditFailClosed(t *testing.T) {
 	f := setup(t)
+	// The current schema must be ready; a stale version check would keep every release at 503.
+	if s := f.api.readiness.Snapshot(t.Context()); !s.Ready || s.Storage != "available" {
+		t.Fatalf("current schema not ready: %+v", s)
+	}
 	for _, path := range []string{"/api/ops/status", "/api/ops/metrics"} {
 		if w := request(f, path); w.Code != 200 {
 			t.Fatalf("%s status=%d", path, w.Code)

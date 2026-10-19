@@ -18,6 +18,9 @@ type Queries interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+// SchemaVersion is the only migration version this build serves; startup and readiness share it.
+const SchemaVersion = 17
+
 type DB struct{ pool *pgxpool.Pool }
 
 func Open(ctx context.Context, url string, maxConnections int32) (*DB, error) {
@@ -58,7 +61,7 @@ func Open(ctx context.Context, url string, maxConnections int32) (*DB, error) {
 		if err := connection.QueryRow(ctx, `SELECT coalesce(max(version_id), 0) FROM public.goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 17 {
+		if version != SchemaVersion {
 			return fmt.Errorf("unsupported database schema version: %d", version)
 		}
 		return nil

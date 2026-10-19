@@ -17,6 +17,7 @@
 ## M3 WASM 沙箱切片
 
 - 实现：internal/sandbox.Run（wazero v1.12.0）；摘要固定、零 host function/WASI、必填超时与内存上限、每次新运行时。契约见 [沙箱契约](../contracts/sandbox.md)。
+- 远端证据：26126c7 [CI 39281615533](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39281615533) success（含 Linux race 与驱动探针）；该次排队约 40 分钟（runner 积压），非失败。
 - 本机验证：沙箱单测通过；三项变异（去摘要、去内存上限、去上下文中断）均失败（m3-sandbox-mutation.log）。无需数据库。
 - 本机 Go 取依赖需 GOPATH=.tools/gopath（GOMODCACHE 默认在 AppData 不可写）。
 - 未实现：规则核算 WASM 模块、容器 Python 路线（本机无容器运行时）、指令计量、产物扫描。

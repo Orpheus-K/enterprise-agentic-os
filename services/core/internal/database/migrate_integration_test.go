@@ -55,7 +55,7 @@ func TestConcurrentMigrationsAndRepeat(t *testing.T) {
 	if err := f.Admin.QueryRow(ctx, `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='iam' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity`).Scan(&protected); err != nil {
 		t.Fatal(err)
 	}
-	if protected != 4 {
+	if protected != 5 {
 		t.Fatalf("want 4 forced-RLS tables, got %d", protected)
 	}
 }
@@ -119,7 +119,7 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	count, migrateErr := m.Up(ctx)
 	closeErr := m.Close()
-	if migrateErr != nil || closeErr != nil || count != 2 {
+	if migrateErr != nil || closeErr != nil || count != 13 {
 		t.Fatalf("upgrade count=%d migration=%v close=%v", count, migrateErr, closeErr)
 	}
 	var name string
@@ -168,11 +168,67 @@ func TestUpgradePreservesLegacyTasksAndAudit(t *testing.T) {
 	}
 	count, upErr := m.Up(ctx)
 	closeErr := m.Close()
-	if upErr != nil || closeErr != nil || count != 1 {
+	if upErr != nil || closeErr != nil || count != 12 {
 		t.Fatalf("upgrade count=%d up=%v close=%v", count, upErr, closeErr)
 	}
 	var preserved bool
 	if err := f.Admin.QueryRow(ctx, `SELECT count(*)=1 AND bool_and(t.prompt='legacy-prompt' AND t.state='pending' AND t.ingress_trace_id='' AND a.id>0 AND a.trace_id='') FROM channel.tasks t JOIN channel.audit a ON t.id=a.task_id AND t.tenant_id=a.tenant_id`).Scan(&preserved); err != nil || !preserved {
 		t.Fatalf("legacy state changed: %v", err)
+	}
+}
+
+func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
+	f := testpg.New(t)
+	ctx := t.Context()
+	files := fstest.MapFS{}
+	for _, name := range []string{"00001_identity.sql", "00002_channel_tasks.sql", "00003_observability.sql"} {
+		body, err := fs.ReadFile(migrationFiles, "migrations/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: body}
+	}
+	old, err := newMigrator(ctx, f.MigrationURL, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.Admin.Exec(ctx, `INSERT INTO iam.tenants(id,name) VALUES('10000000-0000-0000-0000-000000000001','legacy');
+ INSERT INTO iam.members(tenant_id,id,employee_id) SELECT id,id,'legacy' FROM iam.tenants;
+ INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,response,state)
+ SELECT t.id,gen_random_uuid(),t.id,'app','issuer','subject',s.state,s.state,'fingerprint','v1','synthetic','saved',s.state FROM iam.tenants t CROSS JOIN (VALUES('pending'),('model_running'),('delivery_running'),('succeeded')) s(state);
+ INSERT INTO channel.audit(tenant_id,task_id,state,reason) SELECT tenant_id,id,state,'' FROM channel.tasks;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewMigrator(ctx, f.MigrationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := m.Up(ctx)
+	if err != nil || count != 11 {
+		t.Fatalf("migration: %d %v", count, err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var preserved bool
+	err = f.Admin.QueryRow(ctx, `SELECT count(*)=4 AND count(*) FILTER(WHERE state='unknown' AND reason='migration_unowned_attempt')=2 AND count(*) FILTER(WHERE state='pending')=1 AND count(*) FILTER(WHERE state='succeeded')=1 AND bool_and(lease_owner IS NULL AND lease_until IS NULL AND response='saved' AND model_revision='v1') FROM channel.tasks`).Scan(&preserved)
+	if err != nil || !preserved {
+		t.Fatalf("legacy attempts not quarantined: %v", err)
+	}
+	var protected bool
+	if err := f.Admin.QueryRow(ctx, `SELECT count(*)=10 AND bool_and(c.relrowsecurity AND c.relforcerowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='channel' AND c.relkind='r'`).Scan(&protected); err != nil || !protected {
+		t.Fatal("migration did not restore forced RLS")
+	}
+	var events int
+	err = f.Admin.QueryRow(ctx, "SELECT count(*) FROM channel.audit").Scan(&events)
+	if err != nil || events != 6 {
+		t.Fatal("legacy events lost or recovery events missing")
 	}
 }

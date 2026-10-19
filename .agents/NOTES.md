@@ -2,42 +2,42 @@
 
 ## 定位当前里程碑
 
-- 进展：M1 联调与退出验收，日期 2026-10-19；第四切片已完成，M1 尚未退出。
-- 对齐：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) R02/R15、A03/A08/A10；覆盖 V06 权限隔离与 V13 默认脱敏部分，不代表完整诊断体系或整个 M1 完成。
-- 限定：自建应用、固定安装租户、单实例、非流式文本；真实飞书/模型尚未联调；就绪仅表示本地接收条件，模型明确 `not_probed`。
+- 进展：2026-10-19，M1 已退出；M2 已进入退出验收，提交当前实现准备远端 CI/race。M2 整体未完成，自动目标继续。
+- 对齐：R03/R04/R06/R08/R09、A03/A04/A08、V03/V05/V06；[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 定义最终退出，切片通过不替代完整验收。
+- 真源：[任务/审批契约](../contracts/task-runtime.md)、[技能契约](../contracts/skills.md)、[运维契约](../contracts/operations.md)。
 
-## 保留成果与证据
+## 当前退出验收切片
 
-- 建立：`apps/web`、共享 UI/API/config 包、`contracts`、Go 核心、Python 包与部署入口；使用 [根 README](../README.md) 获取命令。
-- 固定：pnpm/uv 锁文件、严格 TypeScript、Biome、依赖边界、Go fmt/vet/test、Ruff/mypy/pytest；工具版本以清单为准。
-- 保留：首切片浏览器 2 项、共享包反向依赖拒绝证据；本切片无前端改动，未重跑浏览器。
-- 新增：pgx 连接池、Goose 显式迁移命令与会话锁；分离迁移/运行角色，拒绝特权运行连接；事务统一提交/回滚，无自动重试。
-- 约束：[身份契约](../contracts/identity.md) 精确绑定租户/提供者/签发方/Subject；每请求解析、每事务复核；IAM 强制 RLS，连接池事务局部上下文不串租户。
-- 新增：`internal/feishu` 使用官方 SDK v3.12.2；长连接与加密 Webhook 共享绑定/接收；签名、Token、时间窗、租户/应用不匹配均拒绝。
-- 保留：任务/审计原子提交、持久化去重、模型与交付前身份重验；网络在事务外。
-- 新增：`internal/model` 固定获准端点/模型/输出上限；禁止重定向与隐式回退；原单聊 text 回复绑定任务 UUID。
-- 新增：schema 3 保存运维能力、查询留痕与 Trace/Span 标识；IAM/查询记录强制 RLS，已有迁移保持不变。
-- 观测：`internal/telemetry` 复用 OTel Go SDK v1.47.0；入口→异步任务 Trace 链接、调用/失败计数与耗时直方图；仅本地白名单输出，不自动外发。
-- 就绪：`/api/ready` 只返回布尔状态；Worker、当前租户/schema、连接状态联合判定；断连/重连、存储失败或未配置渠道均不就绪。
-- 授权：运维 Bearer 凭证绑定现有 IAM 成员，另授应用级 `audit.read`/`status.read`；每请求重验，不接受身份 Header/Cookie；默认不开查询接口。
-- 查询：仅返回任务内分页状态元数据；隔离租户/应用，隐藏正文、身份与全局序列；查询留痕失败不返回结果，见 [运维契约](../contracts/operations.md)。
-- 通过：`pnpm check`，含 Go/TS/Python 检查、双 Go 制品、默认未就绪/运维禁用二进制冒烟与 Python 制品。
-- 通过：`pnpm test:db`，真实 PostgreSQL 17.11 下 18 个集成测试函数；涵盖旧链路回归、schema 1/2→3 数据保留、审计分页/隔离、映射/成员/租户/能力撤销、禁止自授权限、查询留痕原子性及持久化 Trace 关联。
-- 通过：就绪生命周期/并发/探测中断连、运维认证/参数边界、Trace 父子与链接、指标与日志脱敏；前端未改，浏览器未重跑。
-- 修正：OTel 默认合并环境资源属性导致脱敏反例失败，已在出口白名单投影；分页测试逐页独立解码，避免复用旧游标；修正后整套通过。
-- 证明：缺少数据库测试环境直接失败；测试残留数据库/登录角色均为 0；本次专用数据库已停止。
-- 验证：本轮 `pnpm check`、`pnpm test:db`、`pnpm test:e2e`（2 项）通过；专用 PG 已停止。日志与联调清单见 [M1 验收记录](../deploy/m1-acceptance.md)。
-- 通过：已创建[公有仓库](https://github.com/Orpheus-K/enterprise-agentic-os)，代码提交 `089cec5` 的[首轮 CI](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39198385216) 全部成功：全量检查、真实 PG、普通/integration 两组 Linux race、浏览器测试。日志 `.tools/m1-ci.log` 保留本地；Windows 缺 gcc 不影响该 Linux 证据。
-- 保留：[产品](../enterprise-agentic-os-docs/README.md)、[架构](../enterprise-agentic-os-architecture/README.md)与 [规范](../AGENTS.md) 为设计真源；Git 已提交并推送至公有仓库。
+- 修复验收发现：任务核对读/写在任务锁等待后重验身份与 task.reconcile，复用通知核对检查；真实 PG 反例先复现成功越权，再修复通过。证据 `.tools/m2-recovery-lock-before.log`、`m2-recovery-lock-after.log`、`m2-exit-go.log`。
+- 检查公开内容：191 个 Git 可见文件的凭证特征扫描未发现候选；.tools、凭证、数据库和运行日志保持忽略。
+- 固定内容：通知驱动改用强类型 ApprovalNotice；发送前在既有任务锁和接收者授权下读取绑定审批，校验摘要；报价加载前一版本用于差异。
+- 复用组件：官方 SDK 交互卡片展示纯文本初稿、版本/摘要/有效期与批准/驳回按钮，关闭转发；不截断业务正文，超出本地上限显式失败。点击仍走可信回调与当前授权。
+- 验证贯穿：真实 PG＋SDK HTTP 替身完成七五折、卡片发送、改单差异、旧卡片拒绝、连接重开、新卡片批准去重、V2 初稿单次交付；未向真实用户发送。
+- 验证通过：最终 `pnpm test:db`、`pnpm check` 均退出 0；`git diff --check` 通过。测试库/角色残留均为 0，PG 已停止。
+- 留存证据：`.tools/m2-card-send-full-db.log`、`.tools/m2-card-send-check.log`；[卡片贯穿测试](../services/core/internal/feishu/approval_card_integration_test.go)。首轮定向日志 m2-card-send-db.log 保留测试替身误用普通聊天断言的失败；修正为批准 V2 报价断言后全套通过，不冒称首轮通过。
+- 对齐文档：更新通知、报价、任务契约和飞书部署说明；建立 [M2 验收清单](../deploy/m2-acceptance.md)。当前提交远端 CI/race 与平台现场认证未完成，M2 未退出。
 
-## 明确未决与下一步
+## 保留实现与证据
 
-- 环境：Windows、Node 22.18、pnpm 10.15、Python 3.13.13、uv 0.11.8；Go 1.27.2 已校验后放入 `.tools/go`，执行时显式设置 `GO_BINARY`。
-- 取舍：jsdom 固定兼容 Node 22.18 的 26.1；浏览器测试使用 18473，避开本机已有服务；不终止外部进程或静默换端口。
-- 未决：生产环境、候选驱动与业务场景尚未验收；Python 当前只有可打包 CLI 骨架。
-- 复现：按 [数据库指南](../deploy/postgres/README.md) 设置独立凭证；本机测试集群位于 `.tools/pgdata-m1`，端口 55439，连接文件 `.tools/pg-test-admin.url` 已忽略，勿输出或提交。
-- 启动：本机复跑执行 `.tools/postgresql/pgsql/bin/pg_ctl.exe -D .tools/pgdata-m1 -l .tools/pg-test.log -o '-h 127.0.0.1 -p 55439' -w start`；设置 `GO_BINARY` 与从忽略文件读取的 `AGENTOS_TEST_ADMIN_DATABASE_URL`，再运行 `pnpm test:db`；结束后 `pg_ctl -D .tools/pgdata-m1 -m fast -w stop`。
-- 部署：按 [飞书指南](../deploy/feishu.md) 预置 IAM 映射与获准模型配置；`AGENTOS_CHANNEL_CONFIG` 缺省仅启动控制台；凭证由环境注入，不输出或提交。
-- 运维：按 [运维配置](../deploy/operations.md) 可选开启独立凭证与能力；令牌轮换需重启，数据库撤权影响后续请求；当前无 OIDC、审计 UI、OTLP 或诊断导出。
-- 保留：running/unknown 需人工核对，禁止直接重发；pending 重启续处理，旧配置任务不转用新模型；详见 [链路契约](../contracts/feishu-model.md)。
-- 接续：按验收记录注入真实测试租户/模型配置，完成单聊、故障与权限验证后判定 M1。M2 再完善租约、结果核对与自动恢复；组织同步、群聊接收范围与 Python RPC 尚未实现。
+- 继承：可信渠道、IAM/RLS、持久化状态机、租约世代/版本、未知操作核对、审批挂起与认证唤醒；原内容批准、发送前重验，报价修改重算已接入，飞书审批卡片及可信回调已合成验证。
+- 技能资产：manifest＋SKILL.md 以部署期望摘要固定版本；多版本 Registry、渐进摘要、工具权限交集；schema 7 精确授权表只读，运行时不能自授。
+- 固定任务：schema 8 增加 skill_name/skill_revision，入队授权与落库原子提交；重复消息保留旧版本，更换默认技能不改写旧任务。旧包必须保留。
+- 加载上下文：Worker 按任务 Ref 重验并加载指令、契约和样例，使用独立 system/user 角色；模型/发送意图取行锁后重新查技能权限。旧任务未生成响应时缺包/移除配置显式失败，不降级聊天。
+- 配置安装：skills.selected＋assets（绝对路径、期望 Revision），启动校验；支持固定技能与授权摘要路由两种配置。工具技能配置网关后执行有界循环；缺少配置显式拒绝。
+- 验证通过：`pnpm test:db` 全套、最终技能运行时定向 PG 测试、`pnpm check`（Go/TS/Python、构建、二进制冒烟）、`git diff --check`。覆盖 V1/V2 并存、连接池重开与过期重新认领、消息去重、角色隔离、模型前/发送前撤权、新版本不继承授权。
+- 证据日志：`.tools/m2-skill-runtime-db.log`、`m2-skill-runtime-targeted.log`、`m2-skill-runtime-check.log`；[技能运行测试](../services/core/internal/feishu/skill_integration_test.go)。前序证据见 m2-skills-*、m2-approval-*、m2-reconcile-* 忽略日志及对应测试文件。
+- 收束环境：合成数据与本机模型替身；测试数据库/角色残留均为 0，专用 PG 已停止。未调用真实飞书/模型，未跑远端 CI/race；Windows 缺 gcc。前端未改变，不重跑浏览器。
+- 保留 M1：[退出验收](../deploy/m1-acceptance.md) 与 089cec5 的 [CI/race](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39198385216) 是历史证据，不冒充当前变更通过。
+
+## 接续有限验收清单
+
+1. 按 M2 验收清单审查当前全部变更与公开仓库内容，固定提交制品；不得提交 .tools 凭证、测试库或日志。
+2. 推送并验证当前 SHA 的远端 Check（含普通/integration race、真实 PG、浏览器）；失败仅按证据修复，保留运行链接。
+3. 按 M2 文档退出条件逐项判定；缺项继续开发。现场平台、M3/M4 未实现范围保持明确，不借当前合成测试声称生产就绪。
+
+## 保留部署边界
+
+- 升级：停止旧实例、备份并显式迁移至 schema 14；00001—00013 保持原样。M1 独立联调库仍为 schema 3，未修改，不混跑版本。
+- 临时目录：C 盘空间不足；后续本机 Go 命令设置 `GOTMPDIR=$PWD/.tools/go-tmp`，目录已创建，不改系统全局配置。
+- 测试：`GO_BINARY=$PWD/.tools/go/bin/go.exe`；PG `.tools/pgdata-m1`、55439、忽略文件 `.tools/pg-test-admin.url`，禁止回显凭证。
+- 限定：当前固定安装单实例，无生产 HA、自动补偿或 exactly-once 承诺；认证审批接口不是未验签的飞书开放回调。

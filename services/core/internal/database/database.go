@@ -58,7 +58,7 @@ func Open(ctx context.Context, url string, maxConnections int32) (*DB, error) {
 		if err := connection.QueryRow(ctx, `SELECT coalesce(max(version_id), 0) FROM public.goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 3 {
+		if version != 14 {
 			return fmt.Errorf("unsupported database schema version: %d", version)
 		}
 		return nil

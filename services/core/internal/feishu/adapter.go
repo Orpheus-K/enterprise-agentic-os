@@ -44,13 +44,14 @@ type Adapter struct {
 	inbox      Inbox
 	now        func() time.Time
 	telemetry  *telemetry.Telemetry
+	approvals  ApprovalDecider
 }
 
 func New(b Binding, token, key string, inbox Inbox, tel *telemetry.Telemetry) (*Adapter, error) {
 	if err := b.Validate(); err != nil {
 		return nil, err
 	}
-	return &Adapter{b, token, key, inbox, time.Now, tel}, nil
+	return &Adapter{binding: b, token: token, key: key, inbox: inbox, now: time.Now, telemetry: tel}, nil
 }
 
 type envelope struct {
@@ -159,6 +160,16 @@ func (a *Adapter) Webhook() (http.Handler, error) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
+		if e.Header.EventType == "card.action.trigger" {
+			response, err := a.receiveCard(ctx, plain)
+			if err != nil {
+				http.Error(w, "card action rejected", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			success = json.NewEncoder(w).Encode(response) == nil
+			return
+		}
 		if err := a.receive(ctx, plain); err != nil {
 			http.Error(w, "event rejected", http.StatusServiceUnavailable)
 			return

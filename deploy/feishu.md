@@ -2,7 +2,7 @@
 
 ## 准备可信绑定
 
-1. 按 [数据库指南](postgres/README.md) 升级至 schema 3，使用独立运行账户。
+1. 按 [数据库指南](postgres/README.md) 升级至 schema 14，使用独立运行账户。
 2. 创建飞书自建应用与机器人，订阅 `im.message.receive_v1`，配置单聊接收与机器人回复权限。只在测试租户验证，不开启无授权知识源或工具。
 3. 由受控管理员预置 IAM 租户、成员与身份映射；Provider=`feishu`，Issuer=`feishu:<AppID>:<TenantKey>`，Subject 为该应用的用户 OpenID。运行账户无 IAM 写权；当前没有自动注册用户或组织同步。
 4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。
@@ -20,7 +20,7 @@
 
 ## 核对失败与升级
 
-- 保留：pending 可重启继续；running/unknown 需管理员核对模型/飞书结果，不直接改回 pending。尚无自动核对、重放或补发命令。
+- 恢复：pending 可继续，claimed/delivery_pending 租约到期后可安全认领；已记录外部意图的 running 到期转 unknown。按 [任务契约](../contracts/task-runtime.md) 核对，禁止手工改回 pending；尚无自动核对或补发命令。
 - 区分：应用不重试模型或不明发送结果；锁定 SDK 对拨号失败/明确令牌失效最多尝试两次，不等于应用任务重新执行。
 - 固定：修改安装或模型配置会改变指纹；旧 pending 不转用新配置，升级前排空或保持旧获准配置处理完毕。
 - 限制：当前 64 KiB 事件、16 KB 文本输入/输出、45 秒模型请求、15 秒飞书 HTTP 请求；这些是实现边界，不是性能承诺。
@@ -32,6 +32,24 @@
 
 - 复用 [飞书官方 Go SDK](https://github.com/larksuite/oapi-sdk-go/tree/v3.12.2) v3.12.2（MIT），处理长连接、解密、签名算法、令牌与回复协议；额外执行时间窗、绑定、去重和权限复核。
 - 对照 [飞书事件接收文档](https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case)；长连接与 Webhook 的来源认证不同，不虚构长连接 HTTP 签名。
-- 只实现非流式 chat-completions 文本子集；vLLM/Ollama/MindIE 具体版本及流式、工具能力仍待认证。
+- 实现非流式 chat-completions 文本及单工具调用子集；vLLM/Ollama/MindIE 具体版本及流式、工具能力仍待认证。
 
 当前证据与后续工作见 [里程碑笔记](../.agents/NOTES.md)，业务限制以 [链路契约](../contracts/feishu-model.md) 为准。
+
+## 启用固定技能
+
+配置可选 `skills`，完整字段见 [技能契约](../contracts/skills.md#绑定运行任务)。selected 指定一个精确 Ref，assets 保留所有在途任务需要的版本和绝对文件路径。管理员向对应 tenant/member/app 授予 iam.asset_grants 的 skill 精确版本权限；运行账户不得写授权表。
+
+先在合成文本环境验证再切换默认版本。删除旧文件不等于任务迁移；移除配置也不能让旧技能任务改走无技能模型。配置 tools 后支持有界只读 MCP 工具循环，详见 MCP 契约；未配置网关的工具技能显式失败。
+
+## 配置只读工具循环
+
+安装配置可增加 `tools.specs`（网关 Spec 列表）与 `tools.credentials`（凭证绑定列表），必须同时配置 skills。凭证项使用 `principal: {TenantID: <UUID>, MemberID: <UUID>}`、`endpoint`、`token_env`；只保存环境变量名，不保存密钥。Spec 字段、版本计算及风险约束以 [MCP 契约](../contracts/mcp-gateway.md) 为准。管理员先固定 Spec 摘要，绑定技能依赖并授予精确版本；缺项启动或调用失败，不借用其他用户凭证。
+
+模型必须支持标准单 function tool_call 与 assistant/tool 角色；每轮仅允许一个调用，每任务最多四次。协议测试仅覆盖本机合成服务，真实供应商仍需单独认证。
+
+技能自动匹配：将 `skills.selected` 替换为 `skills.routes: [{name, revision}, ...]`，同时在 assets 保留候选与在途旧版本。两种选择模式不可同时配置；授权、候选固定与失败规则见 [技能路由契约](../contracts/skills.md#渐进路由与恢复)。
+
+审批通知：可在 approval 中设置 notify_subject，为当前安装下映射到指定审批成员的飞书 OpenID。通知使用机器人已有发送权限，发送绑定版本的审批初稿卡片；没有有效身份映射或 task.approve 则取消。升级 schema 14 后按 [通知契约](../contracts/approval-notices.md) 验证，不向旧任务追溯补发。
+
+审批回调：在飞书应用订阅 card.action.trigger；使用已配置的可信长连接或加密验签 Webhook。审批成员须在当前安装 issuer 下具有有效飞书身份映射及 task.approve。发布与平台现场交互需单独验证；本机合成测试不证明真实送达。

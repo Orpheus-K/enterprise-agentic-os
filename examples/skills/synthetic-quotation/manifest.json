@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "name": "synthetic-quotation",
+  "publisher": "agentos-test-fixtures",
+  "summary": "准备合成报价初稿；不执行对外发送。",
+  "trigger": "用户明确请求合成报价初稿。",
+  "input_contract": "测试客户标识、产品标识与数量；缺项时询问。",
+  "output_contract": "待核算的报价初稿；不得宣称已审批、正式用章或已发送。",
+  "failure_policy": "缺少获准产品目录或确定性计价能力时停止，不编造价格。",
+  "tools": [],
+  "examples": [
+    {
+      "input": "为测试客户 A 报价，缺少产品和数量。",
+      "output": "请提供测试产品标识与数量；当前未计算价格。"
+    }
+  ]
+}

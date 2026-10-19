@@ -10,8 +10,10 @@
 - 交付：以 text 回复原单聊消息，绑定稳定任务 UUID；不生成富文本动作、附件、审批或公章。拒绝群聊，直到接收范围校验完成。
 - 追溯：同事务写入状态与审计；任务 ID 与 Trace 链接关联接入、调用与交付。日志仅存获准元数据；查询权限与脱敏见 [运维契约](operations.md)。任务表保存必要输入/成功模型结果，部署前明确保留与清理策略。
 
-顺序：`pending → model_running → delivery_running → succeeded`；撤权进入 `failed`；外部错误保守进入 `unknown`。事务内无网络等待。
+顺序：`pending → claimed → model_running → delivery_pending → delivery_running → succeeded`；撤权进入 `failed`，外部结果不明进入 `unknown`。事务内无网络等待；模型结果在 delivery_pending 持久化后才允许准备发送。
 
-中断后的 running、unknown 不自动重领或重发，需核对外部结果；pending 可在重启后继续。配置指纹绑定安装与模型，配置变化不将旧任务转给新端点。M2 再完善租约、核对及恢复工具；当前不承诺崩溃自动恢复或 exactly-once。
+租约过期时，claimed 和 delivery_pending 可在相同安装/Revision 下重新认领；后者复用已保存响应并重新授权，不再次调用模型。model_running/delivery_running 过期转 unknown，不能自动重发。租约、世代、步骤版本与迁移规则以 [持久化任务契约](task-runtime.md) 为准。
+
+本切片只扩展现有单聊任务，不包含审批、Skills、工具调用、自动结果核对或 HA 渠道所有权；不承诺 exactly-once。
 
 验收：[渠道测试](../services/core/internal/feishu/adapter_test.go)、[真实数据库链路](../services/core/internal/feishu/chain_integration_test.go)、[模型协议测试](../services/core/internal/model/client_test.go)。这些是协议替身与真实 PG 的证据，不等于客户飞书或模型服务认证。

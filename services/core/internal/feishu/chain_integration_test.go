@@ -140,7 +140,7 @@ func TestDurablePrivateMessageChain(t *testing.T) {
 		t.Fatal("duplicate external operation")
 	}
 	var count int
-	if err := f.pg.Admin.QueryRow(t.Context(), "SELECT count(*) FROM channel.audit").Scan(&count); err != nil || count != 4 {
+	if err := f.pg.Admin.QueryRow(t.Context(), "SELECT count(*) FROM channel.audit").Scan(&count); err != nil || count != 6 {
 		t.Fatalf("audit transitions=%d err=%v", count, err)
 	}
 	// An authenticated replay with changed content must not create or alter work.
@@ -204,7 +204,7 @@ func TestUnknownResultAndInterruptedTaskNeverAutoRetry(t *testing.T) {
 				t.Fatal("retried uncertain operation")
 			}
 			if phase == "interrupted" {
-				f.state(t, "model_running")
+				f.state(t, "claimed")
 				if modelCalls != 0 || replies != 0 {
 					t.Fatal("re-executed claimed task")
 				}

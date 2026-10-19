@@ -11,11 +11,12 @@ import (
 )
 
 type AuditEntry struct {
-	ID         int64     `json:"id"`
-	State      string    `json:"state"`
-	Reason     string    `json:"reason"`
-	RecordedAt time.Time `json:"recorded_at"`
-	TraceID    string    `json:"trace_id"`
+	OperationID *uuid.UUID `json:"operation_id,omitempty"`
+	ID          int64      `json:"id"`
+	State       string     `json:"state"`
+	Reason      string     `json:"reason"`
+	RecordedAt  time.Time  `json:"recorded_at"`
+	TraceID     string     `json:"trace_id"`
 }
 type AuditPage struct {
 	TaskID    uuid.UUID    `json:"task_id"`
@@ -41,17 +42,17 @@ func (s *Store) ReadAudit(ctx context.Context, external identity.ExternalIdentit
 	}
 	err := s.Operation(ctx, external, "audit.read", func(q database.Queries) error {
 		rows, err := q.Query(ctx, `WITH scoped AS (
-   SELECT row_number() OVER(ORDER BY a.id) AS ordinal,a.state,a.reason,a.recorded_at,a.trace_id
+   SELECT row_number() OVER(ORDER BY a.id) AS ordinal,a.state,a.reason,a.recorded_at,a.trace_id,a.operation_id
    FROM channel.audit a JOIN channel.tasks t ON t.tenant_id=a.tenant_id AND t.id=a.task_id
    WHERE a.tenant_id=$1 AND t.app_id=$2 AND a.task_id=$3)
-   SELECT ordinal,state,reason,recorded_at,trace_id FROM scoped WHERE ordinal>$4 ORDER BY ordinal LIMIT $5`, s.tenant, s.app, task, after, limit+1)
+   SELECT ordinal,state,reason,recorded_at,trace_id,operation_id FROM scoped WHERE ordinal>$4 ORDER BY ordinal LIMIT $5`, s.tenant, s.app, task, after, limit+1)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var entry AuditEntry
-			if err := rows.Scan(&entry.ID, &entry.State, &entry.Reason, &entry.RecordedAt, &entry.TraceID); err != nil {
+			if err := rows.Scan(&entry.ID, &entry.State, &entry.Reason, &entry.RecordedAt, &entry.TraceID, &entry.OperationID); err != nil {
 				return err
 			}
 			page.Entries = append(page.Entries, entry)
@@ -77,7 +78,7 @@ func (s *Store) ReadAudit(ctx context.Context, external identity.ExternalIdentit
 func (s *Store) Ready(ctx context.Context) error {
 	return s.scoped(ctx, func(q database.Queries) error {
 		var ready bool
-		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM iam.tenants WHERE id=$1 AND enabled) AND (SELECT max(version_id) FROM public.goose_db_version WHERE is_applied)=3`, s.tenant).Scan(&ready); err != nil {
+		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM iam.tenants WHERE id=$1 AND enabled) AND (SELECT max(version_id) FROM public.goose_db_version WHERE is_applied)=14`, s.tenant).Scan(&ready); err != nil {
 			return err
 		}
 		if !ready {

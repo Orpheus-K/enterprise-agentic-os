@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -42,6 +43,14 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	operation := "ops.unknown"
 	switch r.URL.Path {
+	case "/api/ops/notice":
+		operation = "ops.notice"
+	case "/api/ops/quotation":
+		operation = "ops.quotation"
+	case "/api/ops/approval":
+		operation = "ops.approval"
+	case "/api/ops/recovery":
+		operation = "ops.recovery"
 	case "/api/ops/audit":
 		operation = "ops.audit"
 	case "/api/ops/status":
@@ -65,7 +74,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		return
 	}
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && !((operation == "ops.recovery" || operation == "ops.approval" || operation == "ops.quotation" || operation == "ops.notice") && r.Method == http.MethodPost) {
 		w.WriteHeader(405)
 		return
 	}
@@ -77,7 +86,68 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var result any
 	var err error
-	if operation == "ops.audit" {
+	if operation == "ops.notice" {
+		result, err = a.noticeOperation(ctx, r, w)
+	} else if operation == "ops.quotation" {
+		if r.Method == http.MethodGet {
+			result, err = a.quotationDocument(ctx, r)
+		} else {
+			var in conversation.QuoteEdit
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
+			decoder.DisallowUnknownFields()
+			if r.URL.RawQuery != "" || decoder.Decode(&in) != nil || decoder.Decode(new(any)) != io.EOF {
+				w.WriteHeader(400)
+				return
+			}
+			result, err = a.store.AmendQuotation(ctx, a.identity, in)
+		}
+	} else if operation == "ops.approval" {
+		if r.Method == http.MethodPost {
+			var in conversation.ApprovalDecision
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if r.URL.RawQuery != "" || decoder.Decode(&in) != nil {
+				w.WriteHeader(400)
+				return
+			}
+			var extra any
+			if decoder.Decode(&extra) != io.EOF {
+				w.WriteHeader(400)
+				return
+			}
+			result, err = a.store.DecideApproval(ctx, a.identity, in)
+		} else {
+			query, parseErr := parseAudit(r)
+			if parseErr != nil || len(r.URL.Query()) != 1 {
+				w.WriteHeader(400)
+				return
+			}
+			result, err = a.store.InspectApproval(ctx, a.identity, query.task)
+		}
+	} else if operation == "ops.recovery" {
+		if r.Method == http.MethodPost {
+			var in conversation.Reconciliation
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if r.URL.RawQuery != "" || decoder.Decode(&in) != nil {
+				w.WriteHeader(400)
+				return
+			}
+			var extra any
+			if decoder.Decode(&extra) != io.EOF {
+				w.WriteHeader(400)
+				return
+			}
+			result, err = a.store.Reconcile(ctx, a.identity, in)
+		} else {
+			query, parseErr := parseAudit(r)
+			if parseErr != nil || len(r.URL.Query()) != 1 {
+				w.WriteHeader(400)
+				return
+			}
+			result, err = a.store.InspectRecovery(ctx, a.identity, query.task)
+		}
+	} else if operation == "ops.audit" {
 		query, parseErr := parseAudit(r)
 		if parseErr != nil {
 			w.WriteHeader(400)
@@ -100,6 +170,12 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, conversation.ErrInvalidApproval), errors.Is(err, conversation.ErrInvalidReconciliation):
+			w.WriteHeader(400)
+		case errors.Is(err, conversation.ErrTaskNotFound):
+			w.WriteHeader(404)
+		case errors.Is(err, conversation.ErrApprovalConflict), errors.Is(err, conversation.ErrReconcileConflict):
+			w.WriteHeader(409)
 		case errors.Is(err, identity.ErrUnauthenticated):
 			w.WriteHeader(401)
 		case errors.Is(err, identitypg.ErrForbidden):
@@ -107,6 +183,14 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			w.WriteHeader(503)
 		}
+		return
+	}
+	if document, isDocument := result.(quotationDocument); isDocument {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+document.filename+`"`)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, err := io.WriteString(w, document.text)
+		ok = err == nil
 		return
 	}
 	ok = json.NewEncoder(w).Encode(result) == nil

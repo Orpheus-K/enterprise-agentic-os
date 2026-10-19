@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"agentos.local/core/internal/conversation"
 	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/model"
 	"encoding/json"
@@ -15,6 +16,20 @@ func TestConfigurationFailsClosed(t *testing.T) {
 		change func(*Config)
 		valid  bool
 	}{
+		{"tools without skills", func(c *Config) { c.Tools = &ToolsConfig{} }, false},
+		{"approval without callback", func(c *Config) { c.Approval = &conversation.ApprovalPolicy{MemberID: uuid.New(), TTLSeconds: 60} }, false},
+		{"approval invalid member", func(c *Config) {
+			c.Operations = &OperationsConfig{TokenEnv: "OPS_TOKEN", Subject: "approver"}
+			c.Approval = &conversation.ApprovalPolicy{TTLSeconds: 60}
+		}, false},
+		{"approval invalid expiry", func(c *Config) {
+			c.Operations = &OperationsConfig{TokenEnv: "OPS_TOKEN", Subject: "approver"}
+			c.Approval = &conversation.ApprovalPolicy{MemberID: uuid.New(), TTLSeconds: 604801}
+		}, false},
+		{"approval enabled", func(c *Config) {
+			c.Operations = &OperationsConfig{TokenEnv: "OPS_TOKEN", Subject: "approver"}
+			c.Approval = &conversation.ApprovalPolicy{MemberID: uuid.New(), TTLSeconds: 3600}
+		}, true},
 		{"valid", func(*Config) {}, true},
 		{"mode", func(c *Config) { c.Mode = "auto" }, false},
 		{"tenant", func(c *Config) { c.Binding.TenantID = uuid.Nil }, false},

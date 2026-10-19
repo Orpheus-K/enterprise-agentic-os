@@ -22,18 +22,22 @@ import (
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/operations"
 	"agentos.local/core/internal/telemetry"
+	"agentos.local/core/internal/toolgateway"
 	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
-	Binding              feishu.Binding    `json:"binding"`
-	Mode                 string            `json:"mode"`
-	DatabaseURLEnv       string            `json:"database_url_env"`
-	AppSecretEnv         string            `json:"app_secret_env"`
-	VerificationTokenEnv string            `json:"verification_token_env"`
-	EncryptKeyEnv        string            `json:"encrypt_key_env"`
-	Model                model.Config      `json:"model"`
-	Operations           *OperationsConfig `json:"operations,omitempty"`
+	Tools                *ToolsConfig                 `json:"tools,omitempty"`
+	Skills               *SkillsConfig                `json:"skills,omitempty"`
+	Approval             *conversation.ApprovalPolicy `json:"approval,omitempty"`
+	Binding              feishu.Binding               `json:"binding"`
+	Mode                 string                       `json:"mode"`
+	DatabaseURLEnv       string                       `json:"database_url_env"`
+	AppSecretEnv         string                       `json:"app_secret_env"`
+	VerificationTokenEnv string                       `json:"verification_token_env"`
+	EncryptKeyEnv        string                       `json:"encrypt_key_env"`
+	Model                model.Config                 `json:"model"`
+	Operations           *OperationsConfig            `json:"operations,omitempty"`
 }
 type OperationsConfig struct {
 	TokenEnv string `json:"token_env"`
@@ -70,6 +74,22 @@ func Parse(raw []byte) (Config, error) {
 			return c, errors.New("operations token environment reference required")
 		}
 		if err := c.operator().Validate(); err != nil {
+			return c, err
+		}
+	}
+	if c.Approval != nil {
+		if c.Operations == nil {
+			return c, errors.New("approval requires operations endpoint")
+		}
+		if err := c.Approval.Validate(); err != nil {
+			return c, err
+		}
+	}
+	if c.Tools != nil && c.Skills == nil {
+		return c, errors.New("tools require configured skills")
+	}
+	if c.Skills != nil {
+		if err := c.Skills.Validate(); err != nil {
 			return c, err
 		}
 	}
@@ -166,12 +186,45 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	}{c.Binding, c.Model})
 	hash := sha256.Sum256(revisionData)
 	store := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, hex.EncodeToString(hash[:]))
+	if c.Approval != nil {
+		store, err = store.WithApproval(*c.Approval)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var gateway *toolgateway.Gateway
+	if c.Skills != nil {
+		registry, loadErr := c.Skills.Load()
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if c.Tools != nil {
+			credentials, credentialErr := toolgateway.NewCredentials(c.Tools.Credentials)
+			if credentialErr != nil {
+				return nil, credentialErr
+			}
+			gateway, err = toolgateway.New(db, c.Binding.TenantID, c.Binding.AppID, registry, c.Tools.Specs, credentials)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(c.Skills.Routes) > 0 {
+			store, err = store.WithRoutes(registry, c.Skills.Routes)
+		} else {
+			store, err = store.WithSkills(registry, c.Skills.Selected)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	adapter, err := feishu.New(c.Binding, token, key, store, tel)
 	if err != nil {
 		return nil, err
 	}
+	adapter = adapter.WithApprovals(store)
 	channel := &Channel{db: db, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
-	channel.worker = &conversation.Worker{Store: store, Model: modelClient, Sender: feishu.NewSender(c.Binding.AppID, appSecret, logger), Logger: logger, Telemetry: tel}
+	sender := feishu.NewSender(c.Binding.AppID, appSecret, logger)
+	channel.worker = &conversation.Worker{Notifier: sender, Store: store, Tools: gateway, Model: modelClient, Sender: sender, Logger: logger, Telemetry: tel}
 	if c.Mode == "webhook" {
 		channel.Handler, err = adapter.Webhook()
 		if err != nil {
@@ -214,4 +267,9 @@ func (c *Channel) Run(ctx context.Context) error {
 		group.Go(func() error { return c.adapter.LongConnection(ctx, c.appSecret, c.logger, c.Readiness.SetTransport) })
 	}
 	return group.Wait()
+}
+
+type ToolsConfig struct {
+	Specs       []toolgateway.Spec              `json:"specs"`
+	Credentials []toolgateway.CredentialBinding `json:"credentials"`
 }

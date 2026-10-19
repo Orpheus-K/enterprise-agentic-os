@@ -47,37 +47,35 @@ func New(c Config, key string) (*Client, error) {
 }
 
 func (c *Client) Complete(ctx context.Context, text string) (string, error) {
+	return c.complete(ctx, "", text)
+}
+func (c *Client) CompleteSkill(ctx context.Context, instructions, text string) (string, error) {
+	if strings.TrimSpace(instructions) == "" || len(instructions) > 131072 {
+		return "", errors.New("invalid skill instructions")
+	}
+	return c.complete(ctx, instructions, text)
+}
+func (c *Client) complete(ctx context.Context, instructions, text string) (string, error) {
 	if len(text) == 0 || len(text) > 16000 {
 		return "", errors.New("model input outside text limit")
 	}
+	messages := []map[string]string{}
+	if instructions != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": instructions})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": text})
 	body, err := json.Marshal(struct {
 		Model     string              `json:"model"`
 		Messages  []map[string]string `json:"messages"`
 		MaxTokens int                 `json:"max_tokens"`
 		Stream    bool                `json:"stream"`
-	}{c.config.Name, []map[string]string{{"role": "user", "content": text}}, c.config.MaxTokens, false})
+	}{c.config.Name, messages, c.config.MaxTokens, false})
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.Endpoint, bytes.NewReader(body))
+	raw, err := c.request(ctx, body)
 	if err != nil {
-		return "", errors.New("invalid model request")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", errors.New("model transport failed; result may be unknown")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("model HTTP status %d", resp.StatusCode)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 65537))
-	if err != nil || len(raw) > 65536 {
-		return "", errors.New("model response unreadable or oversized")
+		return "", err
 	}
 	var result struct {
 		Choices []struct {
@@ -99,4 +97,28 @@ func (c *Client) Complete(ctx context.Context, text string) (string, error) {
 		return "", errors.New("model returned unsupported or incomplete content")
 	}
 	return choice.Message.Content, nil
+}
+
+func (c *Client) request(ctx context.Context, body []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.Endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.New("invalid model request")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, errors.New("model transport failed; result may be unknown")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("model HTTP status %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 65537))
+	if err != nil || len(raw) > 65536 {
+		return nil, errors.New("model response unreadable or oversized")
+	}
+	return raw, nil
 }

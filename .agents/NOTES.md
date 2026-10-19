@@ -9,6 +9,7 @@
 
 - 实现：GET /api/ops/tasks、/api/ops/stats，复用 audit.read；00018 为 audit_reads 增加 scope 且非单任务读取 task_id 为空；新增任务时间窗索引。契约见 [运维契约](../contracts/operations.md#查询任务清单与基础统计)。
 - 本机验证：pnpm test:db、pnpm check 退出 0（m3-report-full-db/check.log）；三项变异（去应用过滤、去游标范围、去留痕）均失败（m3-report-mutation.log）；残留 0，集群已停止。迁移测试的应用条数改为由 database.SchemaVersion 推导。
+- 远端证据：178be47 就绪修复 [CI 39276496300](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39276496300) success；89572b1（schema 18）[CI 39277691880](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39277691880) success。首次 watch 因 GitHub API 502 中断，非测试失败。
 - 未覆盖：知识读取/检索统计（knowledge 审计表运行角色仅 INSERT，需单独授权设计）；耗时分位与人力/收益估算不提供。
 - 真源：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md)、[M2 验收](../deploy/m2-acceptance.md)、[知识管道契约](../contracts/knowledge.md)。契约区分已实现存储/检索与未接入来源/Embedding/消费者。
 

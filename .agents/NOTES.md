@@ -11,9 +11,10 @@
 - 发布向量：PublishVectors 须覆盖当前内容版本全部切片，同事务替换＋审计；新内容版本经切片级联清除旧向量。ACL/健康变化不重算向量。
 - 授权检索：Search 与 Read 共享 visibleChunk 谓词，排序前过滤并叠加 RLS；候选仅含 Reference＋距离，取证必须重走 Read。变异去掉谓词后同步身份用例失败，普通读者仍由 RLS 拦截。
 - 入口：/api/ops/knowledge/vectors 与 /search，沿用认证与错误码。
-- 本机验证：WSL `17/agentos-m3`（55440，需 `pg_ctlcluster --skip-systemctl-redirect` 启动）上 pnpm test:db 与 pnpm check 均退出 0（m3-vector-full-db.log、m3-vector-check.log）；git diff --check 通过；测试库/角色残留 0。
-- 远端证据：fc2d6c6 [CI 39237901826](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39237901826) success（schema 16）；b211575 [CI 39266475769](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39266475769) success，含 pgvector 镜像与驱动探针。schema 17 提交待自身 CI。
+- 本机验证：WSL `17/agentos-m3`（55440，需 `pg_ctlcluster --skip-systemctl-redirect` 启动）上 pnpm test:db 与 pnpm check 均退出 0（m3-vector-full-db.log、m3-vector-check.log）；git diff --check 通过；测试库/角色残留 0，验证后集群已停止。
+- 远端证据：fc2d6c6 [CI 39237901826](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39237901826) success（schema 16）；b211575 [CI 39266475769](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39266475769) success，含 pgvector 镜像与驱动探针；ab3c7ef（schema 17）[CI 39268242988](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39268242988) success（工程检查、真实 PG、race、驱动探针），日志 .tools/m3-vector-ci.log。
 - 限定范围：无 Embedding 调用、ANN、全文融合、中文召回评测、原生来源同步/游标恢复、组织权限解析及模型/交付消费者；不宣称完成 RAG。
+
 ## 固定 M2 证据
 
 - 复验审批：2026-10-19，当前 fc2d6c6/schema 16 已具备本次要求，无重复实现。真实 PG 执行 `go test -tags=integration -count=1 -run 'TestApproval' -v ./internal/feishu` 及 `-run 'TestCardApprovalDatabaseBoundary|TestQuoteApprovalCardAmendRestartDelivery'` 均通过；覆盖版本/摘要绑定、并发重复回调、撤权（含锁等待）、挂起原子性、重启与租约恢复、改单重新审批和单次交付。日志 .tools/m2-approval-current-db.log、m2-approval-current-card-db.log；仅合成替身，无外部发送。此项为当前提交定向复验，不替代全量 CI/race。
@@ -33,9 +34,9 @@
 
 ## 接续 M3 下一切片
 
-1. 核对 schema 17 提交远端 CI；失败按证据修复，不借 b211575 结论。
-2. 接引用消费者：模型上下文组装与交付前对候选逐条 Read 重验，群聊接收范围未确认不输出正文；不缓存正文作授权。
-3. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。原生来源权限同步与游标恢复仍待完成。
+1. 接引用消费者：模型上下文组装与交付前对候选逐条 Read 重验，群聊接收范围未确认不输出正文；不缓存正文作授权。
+2. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。原生来源权限同步与游标恢复仍待完成。
+
 ## 保留交付环境
 
 - 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。

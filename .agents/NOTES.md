@@ -11,11 +11,13 @@
 - 固定健康：schema 16 保存健康版本/epoch/期限；过期、失联与行政停用使原授权失效，恢复须新世代健康＋新版本 ACL，不重写内容。连续有效心跳和重复事件不改变世代。
 - 阻断停用：管理员 enabled=true→false 与健康失效同事务；重新启用不放行旧 ACL。旧 schema 15 来源升级后默认缺健康证明，必须重新确认。
 - 验证进展：全套 pnpm test:db 与 pnpm check 均退出 0（m3-health-full-db.log、m3-health-check.log）；停用触发器更新后另补跑迁移/健康/HTTP 定向通过（m3-health-final-targeted.log）。git diff --check 通过；测试库/角色残留 0，PG 已停止。
-- 保留证据：上一提交 a027450 的 [CI 39236273155](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39236273155) completed/success，证明 schema 15 切片，不代替当前 schema 16 验证。
+- 远端证据：fc2d6c6（schema 16）的 [CI 39237901826](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39237901826) completed/success，日志 .tools/m3-health-ci-success.log。
+- 向量驱动：PG 17.11＋pgvector 0.8.7 探针在 WSL `17/agentos-m3`（55440）通过（m3-vector-probe.log）；CI 改用摘要固定的 pgvector 镜像并执行同一探针。驱动认证不等于检索实现。
 - 限定范围：健康信号由获权同步者报告；原生来源游标拉取/丢失检测、组织权限解析与检索/模型接入仍待实现。当前不宣称完成原生同步或 RAG。
 
 ## 固定 M2 证据
 
+- 复验审批：2026-10-19，当前 fc2d6c6/schema 16 已具备本次要求，无重复实现。真实 PG 执行 `go test -tags=integration -count=1 -run 'TestApproval' -v ./internal/feishu` 及 `-run 'TestCardApprovalDatabaseBoundary|TestQuoteApprovalCardAmendRestartDelivery'` 均通过；覆盖版本/摘要绑定、并发重复回调、撤权（含锁等待）、挂起原子性、重启与租约恢复、改单重新审批和单次交付。日志 .tools/m2-approval-current-db.log、m2-approval-current-card-db.log；仅合成替身，无外部发送。此项为当前提交定向复验，不替代全量 CI/race。
 - 验收制品：8dad1fb00790ce9f2dfdb190c991263680745dbd；[Check 39234206040](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39234206040) completed/success。工程检查、真实 PG、普通/integration race、2 项浏览器测试全部通过，日志 .tools/m2-ci-success.log。
 - 保留失败：0296799 的 [首轮 Check](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067) 在通知并发测试失败；任务候选快照过时，无待发通知却报 no rows。修复为锁后空候选返回无任务，其他错误仍失败；本机连续 20 次真实 PG 回归通过，再以新提交完整 CI 验证。
 - 修复撤权：任务核对读/写在锁等待后重验当前身份及 task.reconcile；反例先失败再修复，日志 m2-recovery-lock-before/after.log。通知核对复用同一检查。

@@ -23,3 +23,13 @@
 验证：迁移并发/重复/失败回滚、强制 RLS、跨租户/成员读写、连接池复用、撤权、角色越权、事务失败/panic/取消。使用 `integration` 构建标签隔离外部依赖；指定测试命令缺少环境必失败，不 skip。`pnpm check` 不替代此命令，CI 强制执行两者。
 
 本机验证使用项目 `.tools` 下 PostgreSQL 17.11，连接材料仅留忽略目录；本地无 TLS 仅限回环测试，部署时按企业要求配置 TLS。CI 使用同系列 PostgreSQL 服务；未认证其他版本或生产 HA。
+
+## 准备向量驱动
+
+- 固定组合：PostgreSQL 17.11＋pgvector 0.8.7。CI 使用官方 `pgvector/pgvector:0.8.7-pg17-trixie`，摘要固定在 [工作流](../../.github/workflows/check.yml)，不跟随浮动标签。
+- 安装扩展：在目标数据库以管理员执行 [vector.sql](vector.sql)；扩展归管理员，迁移/运行账户不获得超级用户权限。已有不同扩展版本显式失败，由管理员备份并另行升级，不自动降级。
+- 验证驱动：专用数据库 owner 为 agentos_migrator；安装扩展后执行 `psql -v ON_ERROR_STOP=1 -f deploy/postgres/verify-vector.sql`。使用运行角色、强制 RLS 与精确余弦排序，验证更近的未授权行不挤掉授权结果、计数不泄露、其他租户不可见；探针事务回滚，不改产品表。
+- 保留边界：探针仅认证驱动基本行为，不证明业务 ACL、Embedding 质量、ANN 召回、全文融合或生产容量。当前 schema 16 不依赖向量扩展；后续检索迁移须明确前置安装与缺失失败条件。
+- 分离本机：Windows 旧 PG 保留 M1 历史库；M3 向量验证使用 WSL Ubuntu 的独立 `17/agentos-m3` 集群、回环端口 55440。PGDG 包固定 `postgresql-17=17.11-1.pgdg24.04+2` 与 `postgresql-17-pgvector=0.8.7-1.pgdg24.04+1`；连接材料只保存在忽略目录，不复用历史库。
+
+依据：[pgvector 安装与精确检索](https://github.com/pgvector/pgvector/tree/v0.8.7)、[PostgreSQL Ubuntu 软件源](https://www.postgresql.org/download/linux/ubuntu/)。

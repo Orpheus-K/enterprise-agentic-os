@@ -13,7 +13,8 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17.11
+        # pgvector 0.8.7 / PostgreSQL 17.11, official multi-platform image.
+        image: pgvector/pgvector:0.8.7-pg17-trixie@sha256:7a7e9f22015b67edb4bef5c59daeebcd7e74bfa570df6ce60ae01237c8648a84
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-test-only
@@ -50,6 +51,14 @@ jobs:
       - run: pnpm test:db
         env:
           AGENTOS_TEST_ADMIN_DATABASE_URL: postgres://postgres:ci-test-only@127.0.0.1:5432/postgres?sslmode=disable
+      - name: Certify vector driver
+        run: |
+          createdb -h 127.0.0.1 -U postgres -O agentos_migrator agentos_vector_cert
+          trap 'dropdb -h 127.0.0.1 -U postgres --if-exists agentos_vector_cert' EXIT
+          psql -h 127.0.0.1 -U postgres -d agentos_vector_cert -v ON_ERROR_STOP=1 -f deploy/postgres/vector.sql
+          psql -h 127.0.0.1 -U postgres -d agentos_vector_cert -v ON_ERROR_STOP=1 -f deploy/postgres/verify-vector.sql
+        env:
+          PGPASSWORD: ci-test-only
       - run: go test -race ./...
         working-directory: services/core
       - run: go test -race -tags=integration -count=1 ./internal/...

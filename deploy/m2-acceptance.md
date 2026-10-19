@@ -1,6 +1,6 @@
 # 验收 M2：持久执行与受控工具
 
-依据 [M2 路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 与 [验证矩阵](../enterprise-agentic-os-architecture/08-验证矩阵与参考依据.md)。本页归集验收证据，不替代测试结果。当前为本机合成验证，当前提交远端 CI/race 未验证，M2 不放行。
+依据 [M2 路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 与 [验证矩阵](../enterprise-agentic-os-architecture/08-验证矩阵与参考依据.md)。本页归集验收证据，不替代测试结果。2026-10-19：工程 M2 可以退出。验收制品为 8dad1fb00790ce9f2dfdb190c991263680745dbd；本机与远端合成测试通过，范围为下表定义的持久执行、审批、只读工具与内部报价初稿，不等同企业生产就绪。
 
 ## 对齐退出条件
 
@@ -24,6 +24,22 @@
 
 真实平台应用发布与卡片现场认证另行记录；未授权真实发送时仅合成验证。知识 ACL、SQLite、沙箱、正式文档与联合备份等按 M3 文档继续推进，不借本页声明已实现。M4 的多节点容量与集团组合仍待对应环境认证。
 
-当前本机证据：2026-10-19，pnpm check 与 pnpm test:db 均退出 0，日志 .tools/m2-card-send-check.log、.tools/m2-card-send-full-db.log；数据库/角色残留为 0。当前 SHA 远端验证仍待补齐。
+当前本机证据：2026-10-19，pnpm check 与 pnpm test:db 均退出 0，日志 .tools/m2-card-send-check.log、.tools/m2-card-send-full-db.log；数据库/角色残留为 0。当前制品的远端验证见下表。
 
 远端首轮：0296799 的 [Check 39233587067](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067) 工程检查通过，真实 PG 通知并发测试失败（候选快照过时导致 no rows）；race 未执行。修复后须以新提交完整复验，不将本轮记为通过。
+
+## 核对最终制品证据
+
+[Check 39234206040](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39234206040) 对 8dad1fb 完成并返回 success；完整日志保存在 .tools/m2-ci-success.log。
+
+| 命令/检查 | 结果 |
+|---|---|
+| pnpm check | 通过：Go/TS/Python、构建与制品冒烟 |
+| pnpm test:db | 通过：真实 PG 17.11；含审批卡片报价链路、通知竞争、锁等待撤权、技能版本及工具未知结果 |
+| go test -race ./... | 通过 |
+| go test -race -tags=integration -count=1 ./internal/... | 通过 |
+| pnpm test:e2e | 通过：2 项 Chromium 测试 |
+
+核对退出：V03/V04 的租约与未知结果、V05 的版本审批与恢复、V10 当前只读 MCP 安全边界、技能版本基础及报价样例均有上表和所链接测试证据。未认证写工具、SOAP、来源 ACL、群聊、正式 PDF/用章与生产容量保持禁用/后续范围，不用合成测试替代现场认证。
+
+转入 M3：先实现 [知识管道契约](../contracts/knowledge.md) 的内容/ACL 独立版本、不可见发布状态与授权读取，再接来源、检索和隔离能力。此后仅文档记录更新不改变已验收制品。

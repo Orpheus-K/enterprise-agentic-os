@@ -2,48 +2,35 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-19，M1 已退出；M2 已进入退出验收，0296799 远端验收发现通知竞争缺陷，已修复并准备新提交复验。M2 整体未完成，自动目标继续。
-- 对齐：R03/R04/R06/R08/R09、A03/A04/A08、V03/V05/V06；[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 定义最终退出，切片通过不替代完整验收。
-- 真源：[任务/审批契约](../contracts/task-runtime.md)、[技能契约](../contracts/skills.md)、[运维契约](../contracts/operations.md)。
+- 进展：2026-10-19，工程 M1、M2 已退出；进入 M3 首切片，自动目标继续，整体蓝图未完成。
+- 真源：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md)、[M2 验收](../deploy/m2-acceptance.md)、[知识管道契约](../contracts/knowledge.md)。知识契约为待实现，不冒称已支持。
 
-## 当前退出验收切片
+## 固定 M2 证据
 
-- 验证修复：真实 PG 并发通知测试连续 20 次通过，pnpm check:go 通过；证据 .tools/m2-notice-race-regression.log、m2-notice-race-go.log。
-- 修复远端反例：任务候选快照可早于其他发送者完成通知；取得任务锁后无可发送通知时返回无任务，其余错误仍失败。未放松发送版本、租约或幂等断言。
+- 验收制品：8dad1fb00790ce9f2dfdb190c991263680745dbd；[Check 39234206040](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39234206040) completed/success。工程检查、真实 PG、普通/integration race、2 项浏览器测试全部通过，日志 .tools/m2-ci-success.log。
+- 保留失败：0296799 的 [首轮 Check](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067) 在通知并发测试失败；任务候选快照过时，无待发通知却报 no rows。修复为锁后空候选返回无任务，其他错误仍失败；本机连续 20 次真实 PG 回归通过，再以新提交完整 CI 验证。
+- 修复撤权：任务核对读/写在锁等待后重验当前身份及 task.reconcile；反例先失败再修复，日志 m2-recovery-lock-before/after.log。通知核对复用同一检查。
+- 保留本机：m2-card-send-full-db.log、m2-card-send-check.log、m2-notice-race-regression.log、m2-notice-race-go.log 位于 .tools；测试库/角色残留均为 0，PG 已停止。无真实业务数据或外部发送。
 
-- 跟踪远端：[Check 39233587067](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067)，精确 SHA 02967992b4558b73d8db17163353d52c0bdf488a；已完成且失败：真实 PG 的 TestApprovalNoticeConcurrentAndRestart 返回 no rows；后续 race 未运行。失败日志 .tools/m2-ci-failed.log。
-- 收束现场：锁等待撤权回归与其余核对测试通过；测试库/角色残留 0，PG 已停止。提交中的示例 Skill 摘要已按 Git blob 字节校验。
+## 保留实现边界
 
-- 修复验收发现：任务核对读/写在任务锁等待后重验身份与 task.reconcile，复用通知核对检查；真实 PG 反例先复现成功越权，再修复通过。证据 `.tools/m2-recovery-lock-before.log`、`m2-recovery-lock-after.log`、`m2-exit-go.log`。
-- 检查公开内容：191 个 Git 可见文件的凭证特征扫描未发现候选；.tools、凭证、数据库和运行日志保持忽略。
-- 固定内容：通知驱动改用强类型 ApprovalNotice；发送前在既有任务锁和接收者授权下读取绑定审批，校验摘要；报价加载前一版本用于差异。
-- 复用组件：官方 SDK 交互卡片展示纯文本初稿、版本/摘要/有效期与批准/驳回按钮，关闭转发；不截断业务正文，超出本地上限显式失败。点击仍走可信回调与当前授权。
-- 验证贯穿：真实 PG＋SDK HTTP 替身完成七五折、卡片发送、改单差异、旧卡片拒绝、连接重开、新卡片批准去重、V2 初稿单次交付；未向真实用户发送。
-- 验证通过：最终 `pnpm test:db`、`pnpm check` 均退出 0；`git diff --check` 通过。测试库/角色残留均为 0，PG 已停止。
-- 留存证据：`.tools/m2-card-send-full-db.log`、`.tools/m2-card-send-check.log`；[卡片贯穿测试](../services/core/internal/feishu/approval_card_integration_test.go)。首轮定向日志 m2-card-send-db.log 保留测试替身误用普通聊天断言的失败；修正为批准 V2 报价断言后全套通过，不冒称首轮通过。
-- 对齐文档：更新通知、报价、任务契约和飞书部署说明；建立 [M2 验收清单](../deploy/m2-acceptance.md)。当前提交远端 CI/race 与平台现场认证未完成，M2 未退出。
+- 固定执行：schema 14；租约世代/版本、持久检查点、未知操作证据核对、审批挂起/唤醒、通知发送与核对均落库；外部未知结果不盲重试，不承诺 exactly-once。
+- 固定资产：Skills 以 manifest＋SKILL.md 摘要固定，动态摘要路由、授权交集、在途版本并存；缺包拒绝，旧包须保留。示例摘要按 Git blob 验证。
+- 限制工具：官方 MCP SDK 固定目标，只读工具、凭证代办、契约校验、审计与有界循环；复用已保存结果，不重放未知外部请求。
+- 绑定报价：整数金额核算、七五折审批、改单重算、旧卡片拒绝、差异显示、可信渠道回调和 V2 内部文本初稿单次交付已合成贯通。真实飞书卡片现场认证、正式 PDF 与用章仍待后续验收。
+- 保护卡片：获权审批人可见绑定版本全文，plain_text 且关闭转发；超限拒绝而非截断。已发送内容无法因撤权收回，点击与交付重新授权。
+- 保留 M1：[现场验收](../deploy/m1-acceptance.md) 与历史 CI 独立留存；M1 联调库 schema 3 未迁移，不与当前制品混跑。
 
-## 保留实现与证据
+## 接续 M3 首切片
 
-- 继承：可信渠道、IAM/RLS、持久化状态机、租约世代/版本、未知操作核对、审批挂起与认证唤醒；原内容批准、发送前重验，报价修改重算已接入，飞书审批卡片及可信回调已合成验证。
-- 技能资产：manifest＋SKILL.md 以部署期望摘要固定版本；多版本 Registry、渐进摘要、工具权限交集；schema 7 精确授权表只读，运行时不能自授。
-- 固定任务：schema 8 增加 skill_name/skill_revision，入队授权与落库原子提交；重复消息保留旧版本，更换默认技能不改写旧任务。旧包必须保留。
-- 加载上下文：Worker 按任务 Ref 重验并加载指令、契约和样例，使用独立 system/user 角色；模型/发送意图取行锁后重新查技能权限。旧任务未生成响应时缺包/移除配置显式失败，不降级聊天。
-- 配置安装：skills.selected＋assets（绝对路径、期望 Revision），启动校验；支持固定技能与授权摘要路由两种配置。工具技能配置网关后执行有界循环；缺少配置显式拒绝。
-- 验证通过：`pnpm test:db` 全套、最终技能运行时定向 PG 测试、`pnpm check`（Go/TS/Python、构建、二进制冒烟）、`git diff --check`。覆盖 V1/V2 并存、连接池重开与过期重新认领、消息去重、角色隔离、模型前/发送前撤权、新版本不继承授权。
-- 证据日志：`.tools/m2-skill-runtime-db.log`、`m2-skill-runtime-targeted.log`、`m2-skill-runtime-check.log`；[技能运行测试](../services/core/internal/feishu/skill_integration_test.go)。前序证据见 m2-skills-*、m2-approval-*、m2-reconcile-* 忽略日志及对应测试文件。
-- 收束环境：合成数据与本机模型替身；测试数据库/角色残留均为 0，专用 PG 已停止。未调用真实飞书/模型，未跑远端 CI/race；Windows 缺 gcc。前端未改变，不重跑浏览器。
-- 保留 M1：[退出验收](../deploy/m1-acceptance.md) 与 089cec5 的 [CI/race](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39198385216) 是历史证据，不冒充当前变更通过。
+1. 对齐 R02/R10/R12、A05/A06/A08、V06—V08，读取知识架构与契约；实现 knowledge 模块和独立 PG 迁移。
+2. 建立合成来源的内容版本、ACL 版本/有效期、删除与发布状态；来源/权限写入须有独立授权，普通用户及模型不可自授。
+3. 复用身份与事务，实现数据库出库前文档/切片授权、引用重验；未知权限语义拒绝，不先返回正文再过滤。
+4. 用真实 PG 验证内容先到、权限先到、撤销不重建内容、旧事件、超期、删除、跨租户/安装/成员和事务失败；完成后更新证据，再接真实来源与检索消费者。
 
-## 接续有限验收清单
+## 保留交付环境
 
-1. 按 M2 验收清单审查当前全部变更与公开仓库内容，固定提交制品；不得提交 .tools 凭证、测试库或日志。
-2. 推送并验证当前 SHA 的远端 Check（含普通/integration race、真实 PG、浏览器）；失败仅按证据修复，保留运行链接。
-3. 按 M2 文档退出条件逐项判定；缺项继续开发。现场平台、M3/M4 未实现范围保持明确，不借当前合成测试声称生产就绪。
-
-## 保留部署边界
-
-- 升级：停止旧实例、备份并显式迁移至 schema 14；00001—00013 保持原样。M1 独立联调库仍为 schema 3，未修改，不混跑版本。
-- 临时目录：C 盘空间不足；后续本机 Go 命令设置 `GOTMPDIR=$PWD/.tools/go-tmp`，目录已创建，不改系统全局配置。
-- 测试：`GO_BINARY=$PWD/.tools/go/bin/go.exe`；PG `.tools/pgdata-m1`、55439、忽略文件 `.tools/pg-test-admin.url`，禁止回显凭证。
-- 限定：当前固定安装单实例，无生产 HA、自动补偿或 exactly-once 承诺；认证审批接口不是未验签的飞书开放回调。
+- 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。
+- 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
+- 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
+- 当前仅文档更新：验收记录与 M3 契约不改变已通过 CI 的实现；M3 代码另行验证，不沿用 M2 通过结论。

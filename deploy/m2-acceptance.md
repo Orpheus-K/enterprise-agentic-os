@@ -25,3 +25,5 @@
 真实平台应用发布与卡片现场认证另行记录；未授权真实发送时仅合成验证。知识 ACL、SQLite、沙箱、正式文档与联合备份等按 M3 文档继续推进，不借本页声明已实现。M4 的多节点容量与集团组合仍待对应环境认证。
 
 当前本机证据：2026-10-19，pnpm check 与 pnpm test:db 均退出 0，日志 .tools/m2-card-send-check.log、.tools/m2-card-send-full-db.log；数据库/角色残留为 0。当前 SHA 远端验证仍待补齐。
+
+远端首轮：0296799 的 [Check 39233587067](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067) 工程检查通过，真实 PG 通知并发测试失败（候选快照过时导致 no rows）；race 未执行。修复后须以新提交完整复验，不将本轮记为通过。

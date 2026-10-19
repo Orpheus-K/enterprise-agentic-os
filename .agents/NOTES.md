@@ -2,11 +2,17 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-19，M1 已退出；M2 已进入退出验收，提交当前实现准备远端 CI/race。M2 整体未完成，自动目标继续。
+- 进展：2026-10-19，M1 已退出；M2 已进入退出验收，0296799 远端验收发现通知竞争缺陷，已修复并准备新提交复验。M2 整体未完成，自动目标继续。
 - 对齐：R03/R04/R06/R08/R09、A03/A04/A08、V03/V05/V06；[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 定义最终退出，切片通过不替代完整验收。
 - 真源：[任务/审批契约](../contracts/task-runtime.md)、[技能契约](../contracts/skills.md)、[运维契约](../contracts/operations.md)。
 
 ## 当前退出验收切片
+
+- 验证修复：真实 PG 并发通知测试连续 20 次通过，pnpm check:go 通过；证据 .tools/m2-notice-race-regression.log、m2-notice-race-go.log。
+- 修复远端反例：任务候选快照可早于其他发送者完成通知；取得任务锁后无可发送通知时返回无任务，其余错误仍失败。未放松发送版本、租约或幂等断言。
+
+- 跟踪远端：[Check 39233587067](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39233587067)，精确 SHA 02967992b4558b73d8db17163353d52c0bdf488a；已完成且失败：真实 PG 的 TestApprovalNoticeConcurrentAndRestart 返回 no rows；后续 race 未运行。失败日志 .tools/m2-ci-failed.log。
+- 收束现场：锁等待撤权回归与其余核对测试通过；测试库/角色残留 0，PG 已停止。提交中的示例 Skill 摘要已按 Git blob 字节校验。
 
 - 修复验收发现：任务核对读/写在任务锁等待后重验身份与 task.reconcile，复用通知核对检查；真实 PG 反例先复现成功越权，再修复通过。证据 `.tools/m2-recovery-lock-before.log`、`m2-recovery-lock-after.log`、`m2-exit-go.log`。
 - 检查公开内容：191 个 Git 可见文件的凭证特征扫描未发现候选；.tools、凭证、数据库和运行日志保持忽略。

@@ -44,6 +44,11 @@ func (s *Store) NotifyOne(ctx context.Context, sender Notifier) (bool, error) {
 		}
 		var state string
 		err = q.QueryRow(ctx, `SELECT id,member_id,recipient,issuer,content_hash,waiting_version,state FROM channel.approval_notices WHERE tenant_id=$1 AND task_id=$2 AND (state='pending' OR (state='sending' AND lease_until<=clock_timestamp())) ORDER BY waiting_version,id LIMIT 1`, s.tenant, task).Scan(&id, &member, &recipient, &issuer, &hash, &version, &state)
+		// The task candidate's statement snapshot may precede another sender's
+		// commit. Recheck under the task lock; an exhausted candidate is no work.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}

@@ -67,7 +67,10 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f.content = Content{SourceID: f.source, DocumentID: "synthetic-doc", Revision: 1, Title: "Synthetic title", Chunks: []Chunk{{ID: "p1", Body: "Synthetic evidence", Anchor: "paragraph:1"}, {ID: "p2", Body: "Restricted evidence", Anchor: "paragraph:2"}}}
-	f.acl = ACL{SourceID: f.source, DocumentID: f.content.DocumentID, Revision: 1, ContentRevision: 1, Allow: []uuid.UUID{f.readerID}, ValidUntil: time.Now().UTC().Add(time.Hour)}
+	if _, err := f.store.UpdateHealth(t.Context(), f.owner, HealthUpdate{SourceID: f.source, Revision: 1, State: "healthy", ValidUntil: time.Now().UTC().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	f.acl = ACL{SourceEpoch: 1, SourceID: f.source, DocumentID: f.content.DocumentID, Revision: 1, ContentRevision: 1, Allow: []uuid.UUID{f.readerID}, ValidUntil: time.Now().UTC().Add(time.Hour)}
 	return f
 }
 func (f *fixture) ref() Reference {
@@ -299,7 +302,7 @@ func TestKnowledgeTenantIsolationAndRestart(t *testing.T) {
 	}
 	f.read(t, true)
 	var protected int
-	if err := f.pg.Admin.QueryRow(t.Context(), `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='knowledge' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity`).Scan(&protected); err != nil || protected != 4 {
+	if err := f.pg.Admin.QueryRow(t.Context(), `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='knowledge' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity`).Scan(&protected); err != nil || protected != 5 {
 		t.Fatal("knowledge RLS missing", protected, err)
 	}
 }

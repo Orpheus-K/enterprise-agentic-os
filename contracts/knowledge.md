@@ -28,12 +28,23 @@
 
 ## 首切片实现边界
 
-- 管理来源：knowledge.sources 由管理员预置 tenant/app/source/sync_member，默认禁用；运行角色只能读取，不能创建来源或更换同步身份。关闭来源立即阻断读取/写入。
-- 调用入口：internal/knowledge.Store 提供 PutContent、PutACL、Read；身份必须来自可信渠道，复用现有身份映射与事务。尚无面向外部的同步 HTTP/MCP 接口。
+- 管理来源：knowledge.sources 由管理员预置 tenant/app/source/sync_member，默认禁用；运行角色只能读取来源配置，不能创建来源或更换同步身份。关闭来源立即阻断读取/写入。
+- 调用入口：internal/knowledge.Store 提供 PutContent、PutACL、Read；身份必须来自可信渠道，复用现有身份映射与事务。已通过既有认证运维 HTTP 接入；尚无来源 MCP/拉取连接器。
 - 固定版本：源版本使用正整数，内容与 ACL 各自单调推进；相同版本与相同输入摘要幂等，变更输入或旧版本冲突。ACL 显式绑定 ContentRevision；新内容没有对应 ACL 时不可读，ACL 可先于内容到达。
-- 表达权限：首切片接受来源归一化的成员允许/拒绝；文档拒绝优先，切片规则仅收紧。切片 allow 缺失继承，空数组拒绝全部，两者摘要不同。不声称已解析部门继承或源平台自定义规则。
+- 表达权限：当前接受来源归一化的成员允许/拒绝；文档拒绝优先，切片规则仅收紧。切片 allow 缺失继承，空数组拒绝全部，两者摘要不同。不声称已解析部门继承或源平台自定义规则。
 - 固定引用：Read 输入来源/文档/切片/内容版本/ACL 版本；返回已授权标题、正文和不透明原文锚点。版本、当前身份或权限不匹配不返回正文；此处不生成可点击源 URL 或虚构出处。
 - 守住数据库：四张 knowledge 表强制 RLS；运行角色与所有权分离检查覆盖新 schema，事务清空并重新设置安装上下文。授权同步人可处理来源原始数据，普通读取接口仍执行发布/ACL 条件。
 - 原子审计：内容、ACL、切片替换与元数据审计同事务；读取审计失败不返回证据。日志不记正文；删除先使当前引用不可读，不假设外部已缓存正文能够撤回。
 
 验证入口：[真实 PG 场景](../services/core/internal/knowledge/store_integration_test.go)、[空授权语义](../services/core/internal/knowledge/types_test.go)。阶段命令与实际结果记入项目笔记。后续先接受控同步入口与来源健康/恢复，再提供授权检索和引用消费者；本片不宣称完成 RAG。
+## 接入同步与健康恢复
+
+- 认证入口：开启既有 operations 配置后启用 POST /api/ops/knowledge/{content,acl,health,read}。仅接受配置绑定的 Bearer 身份，不接受请求携带租户、安装或同步人；仍需当前身份映射和来源 sync_member 授权。read 另按文档/切片 ACL，不因同步身份跳过发布检查。
+- 验证输入：字段使用 snake_case，与 Content/ACL/HealthUpdate/Reference 类型对应；拒绝未知字段、尾随 JSON、查询参数，正文上限 8 MiB。成功写入返回 accepted，health 返回来源版本/世代/状态/有效期，read 返回授权 Evidence；所有响应 no-store。
+- 明确失败：无认证/已撤销身份 401，未绑定同步来源 403，不可用引用/健康 404，无效字段 400，版本冲突 409，数据库或审计失败 503。不得从错误内容返回正文或凭证。
+- 固定健康：schema 16 独立持久化来源健康版本、epoch 与有效期；初始不可用。健康报告版本单调，相同输入重复不续期；过期或 unavailable 拒绝读取。仅健康且未过期的连续心跳保留 epoch。
+- 恢复权限：失联/过期后新健康报告分配新 epoch；ACL 必须显式携带 source_epoch，并使用新 ACL revision 再确认，旧版本不能恢复可见。内容版本不改变，无需重新计算切片。
+- 阻断停用：管理员将来源 enabled 从 true 改为 false，同事务使健康证明失效并改变 epoch；重新启用仍需新健康报告及新世代 ACL。升级前旧来源也默认无有效健康证明，不追溯放行。
+- 限定证明：健康报告来自获权同步身份，不由平台臆测外部可达；原生游标拉取、丢失检测与全量恢复连接器待后续实现。当前只提供这些来源故障信号的受控接收与隔离机制。
+
+验证：[健康/世代数据库测试](../services/core/internal/knowledge/health_integration_test.go)、[HTTP 鉴权测试](../services/core/internal/operations/knowledge_integration_test.go)。先验证恢复不放宽旧授权，再接真实来源事件与授权检索。

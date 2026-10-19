@@ -119,7 +119,7 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	count, migrateErr := m.Up(ctx)
 	closeErr := m.Close()
-	if migrateErr != nil || closeErr != nil || count != 14 {
+	if migrateErr != nil || closeErr != nil || count != 15 {
 		t.Fatalf("upgrade count=%d migration=%v close=%v", count, migrateErr, closeErr)
 	}
 	var name string
@@ -168,7 +168,7 @@ func TestUpgradePreservesLegacyTasksAndAudit(t *testing.T) {
 	}
 	count, upErr := m.Up(ctx)
 	closeErr := m.Close()
-	if upErr != nil || closeErr != nil || count != 13 {
+	if upErr != nil || closeErr != nil || count != 14 {
 		t.Fatalf("upgrade count=%d up=%v close=%v", count, upErr, closeErr)
 	}
 	var preserved bool
@@ -211,7 +211,7 @@ func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, err := m.Up(ctx)
-	if err != nil || count != 12 {
+	if err != nil || count != 13 {
 		t.Fatalf("migration: %d %v", count, err)
 	}
 	if err := m.Close(); err != nil {

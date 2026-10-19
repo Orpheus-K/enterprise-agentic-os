@@ -78,7 +78,7 @@ func (s *Store) ReadAudit(ctx context.Context, external identity.ExternalIdentit
 func (s *Store) Ready(ctx context.Context) error {
 	return s.scoped(ctx, func(q database.Queries) error {
 		var ready bool
-		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM iam.tenants WHERE id=$1 AND enabled) AND (SELECT max(version_id) FROM public.goose_db_version WHERE is_applied)=15`, s.tenant).Scan(&ready); err != nil {
+		if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM iam.tenants WHERE id=$1 AND enabled) AND (SELECT max(version_id) FROM public.goose_db_version WHERE is_applied)=16`, s.tenant).Scan(&ready); err != nil {
 			return err
 		}
 		if !ready {

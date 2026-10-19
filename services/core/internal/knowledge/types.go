@@ -14,44 +14,45 @@ var ErrConflict = errors.New("knowledge version conflict")
 var ErrUnavailable = errors.New("knowledge reference unavailable")
 
 type Chunk struct {
-	ID     string
-	Body   string
-	Anchor string
+	ID     string `json:"id"`
+	Body   string `json:"body"`
+	Anchor string `json:"anchor"`
 }
 type Content struct {
-	SourceID   uuid.UUID
-	DocumentID string
-	Revision   int64
-	Title      string
-	Deleted    bool
-	Chunks     []Chunk
+	SourceID   uuid.UUID `json:"source_id"`
+	DocumentID string    `json:"document_id"`
+	Revision   int64     `json:"revision"`
+	Title      string    `json:"title"`
+	Deleted    bool      `json:"deleted"`
+	Chunks     []Chunk   `json:"chunks"`
 }
 type ChunkACL struct {
 	Allow []uuid.UUID `json:"allow"`
 	Deny  []uuid.UUID `json:"deny"`
 }
 type ACL struct {
-	SourceID        uuid.UUID
-	DocumentID      string
-	Revision        int64
-	ContentRevision int64
-	Allow           []uuid.UUID
-	Deny            []uuid.UUID
-	Chunks          map[string]ChunkACL
-	ValidUntil      time.Time
+	SourceEpoch     int64               `json:"source_epoch"`
+	SourceID        uuid.UUID           `json:"source_id"`
+	DocumentID      string              `json:"document_id"`
+	Revision        int64               `json:"revision"`
+	ContentRevision int64               `json:"content_revision"`
+	Allow           []uuid.UUID         `json:"allow"`
+	Deny            []uuid.UUID         `json:"deny"`
+	Chunks          map[string]ChunkACL `json:"chunks"`
+	ValidUntil      time.Time           `json:"valid_until"`
 }
 type Reference struct {
-	SourceID        uuid.UUID
-	DocumentID      string
-	ChunkID         string
-	ContentRevision int64
-	ACLRevision     int64
+	SourceID        uuid.UUID `json:"source_id"`
+	DocumentID      string    `json:"document_id"`
+	ChunkID         string    `json:"chunk_id"`
+	ContentRevision int64     `json:"content_revision"`
+	ACLRevision     int64     `json:"acl_revision"`
 }
 type Evidence struct {
-	Reference Reference
-	Title     string
-	Body      string
-	Anchor    string
+	Reference Reference `json:"reference"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	Anchor    string    `json:"anchor"`
 }
 
 func label(s string, max int) bool {
@@ -93,7 +94,7 @@ func (c Content) validate() error {
 	return nil
 }
 func (a ACL) validate() error {
-	if a.SourceID == uuid.Nil || !label(a.DocumentID, 256) || a.Revision < 1 || a.ContentRevision < 1 || a.ValidUntil.IsZero() || !members(a.Allow) || !members(a.Deny) || len(a.Chunks) > 256 {
+	if a.SourceEpoch < 1 || a.SourceID == uuid.Nil || !label(a.DocumentID, 256) || a.Revision < 1 || a.ContentRevision < 1 || a.ValidUntil.IsZero() || !members(a.Allow) || !members(a.Deny) || len(a.Chunks) > 256 {
 		return ErrInvalid
 	}
 	for id, c := range a.Chunks {

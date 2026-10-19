@@ -6,6 +6,7 @@ import (
 	"agentos.local/core/internal/health"
 	"agentos.local/core/internal/identity"
 	identitypg "agentos.local/core/internal/identity/postgres"
+	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/telemetry"
 	"context"
 	"crypto/sha256"
@@ -27,6 +28,7 @@ type API struct {
 	store     *conversation.Store
 	readiness *health.Readiness
 	telemetry *telemetry.Telemetry
+	knowledge *knowledge.Store
 }
 
 func New(token string, external identity.ExternalIdentity, store *conversation.Store, ready *health.Readiness, tel *telemetry.Telemetry) (*API, error) {
@@ -36,13 +38,21 @@ func New(token string, external identity.ExternalIdentity, store *conversation.S
 	if err := external.Validate(); err != nil {
 		return nil, err
 	}
-	return &API{sha256.Sum256([]byte(token)), external, store, ready, tel}, nil
+	return &API{token: sha256.Sum256([]byte(token)), identity: external, store: store, readiness: ready, telemetry: tel}, nil
+}
+
+func (a *API) WithKnowledge(store *knowledge.Store) *API {
+	copy := *a
+	copy.knowledge = store
+	return &copy
 }
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	operation := "ops.unknown"
 	switch r.URL.Path {
+	case "/api/ops/knowledge/content", "/api/ops/knowledge/acl", "/api/ops/knowledge/health", "/api/ops/knowledge/read":
+		operation = "ops.knowledge"
 	case "/api/ops/notice":
 		operation = "ops.notice"
 	case "/api/ops/quotation":
@@ -74,7 +84,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		return
 	}
-	if r.Method != http.MethodGet && !((operation == "ops.recovery" || operation == "ops.approval" || operation == "ops.quotation" || operation == "ops.notice") && r.Method == http.MethodPost) {
+	if (operation == "ops.knowledge" && r.Method != http.MethodPost) || (r.Method != http.MethodGet && !((operation == "ops.recovery" || operation == "ops.approval" || operation == "ops.quotation" || operation == "ops.notice" || operation == "ops.knowledge") && r.Method == http.MethodPost)) {
 		w.WriteHeader(405)
 		return
 	}
@@ -86,7 +96,13 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var result any
 	var err error
-	if operation == "ops.notice" {
+	if operation == "ops.knowledge" {
+		if a.knowledge == nil {
+			w.WriteHeader(404)
+			return
+		}
+		result, err = a.knowledgeOperation(ctx, r, w)
+	} else if operation == "ops.notice" {
 		result, err = a.noticeOperation(ctx, r, w)
 	} else if operation == "ops.quotation" {
 		if r.Method == http.MethodGet {
@@ -170,11 +186,11 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch {
-		case errors.Is(err, conversation.ErrInvalidApproval), errors.Is(err, conversation.ErrInvalidReconciliation):
+		case errors.Is(err, conversation.ErrInvalidApproval), errors.Is(err, conversation.ErrInvalidReconciliation), errors.Is(err, knowledge.ErrInvalid):
 			w.WriteHeader(400)
-		case errors.Is(err, conversation.ErrTaskNotFound):
+		case errors.Is(err, conversation.ErrTaskNotFound), errors.Is(err, knowledge.ErrUnavailable):
 			w.WriteHeader(404)
-		case errors.Is(err, conversation.ErrApprovalConflict), errors.Is(err, conversation.ErrReconcileConflict):
+		case errors.Is(err, conversation.ErrApprovalConflict), errors.Is(err, conversation.ErrReconcileConflict), errors.Is(err, knowledge.ErrConflict):
 			w.WriteHeader(409)
 		case errors.Is(err, identity.ErrUnauthenticated):
 			w.WriteHeader(401)

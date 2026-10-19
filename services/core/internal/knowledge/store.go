@@ -138,6 +138,13 @@ func (s *Store) PutACL(ctx context.Context, actor identity.ExternalIdentity, a A
 		if err := s.lock(ctx, q, a.SourceID, a.DocumentID); err != nil {
 			return err
 		}
+		var ready bool
+		if err := q.QueryRow(ctx, "SELECT knowledge.source_ready($1,$2)", a.SourceID, a.SourceEpoch).Scan(&ready); err != nil {
+			return err
+		}
+		if !ready {
+			return ErrUnavailable
+		}
 		var revision int64
 		var old string
 		if err := q.QueryRow(ctx, `SELECT acl_revision,acl_hash FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID).Scan(&revision, &old); err != nil {
@@ -156,7 +163,7 @@ func (s *Store) PutACL(ctx context.Context, actor identity.ExternalIdentity, a A
 		if deny == nil {
 			deny = []uuid.UUID{}
 		}
-		if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET acl_revision=$5,acl_hash=$6,acl_content_revision=$7,allow_members=$8,deny_members=$9,chunk_acl=$10,valid_until=$11 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID, a.Revision, hash, a.ContentRevision, allow, deny, raw, a.ValidUntil); err != nil {
+		if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET acl_revision=$5,acl_hash=$6,acl_content_revision=$7,allow_members=$8,deny_members=$9,chunk_acl=$10,valid_until=$11,source_epoch=$12 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID, a.Revision, hash, a.ContentRevision, allow, deny, raw, a.ValidUntil, a.SourceEpoch); err != nil {
 			return err
 		}
 		return s.audit(ctx, q, a.SourceID, a.DocumentID, "acl", a.Revision)
@@ -169,7 +176,7 @@ func (s *Store) Read(ctx context.Context, actor identity.ExternalIdentity, ref R
 	}
 	out := Evidence{Reference: ref}
 	err := s.within(ctx, actor, func(q database.Queries) error {
-		err := q.QueryRow(ctx, `SELECT d.title,c.body,c.anchor FROM knowledge.chunks c JOIN knowledge.documents d ON (d.tenant_id,d.app_id,d.source_id,d.id)=(c.tenant_id,c.app_id,c.source_id,c.document_id) WHERE c.tenant_id=$1 AND c.app_id=$2 AND c.source_id=$3 AND c.document_id=$4 AND c.id=$5 AND c.content_revision=$6 AND d.acl_revision=$7 AND d.acl_content_revision=$6 AND NOT d.deleted AND d.valid_until>clock_timestamp() AND current_setting('agentos.member_id')::uuid=ANY(d.allow_members) AND NOT current_setting('agentos.member_id')::uuid=ANY(d.deny_members) AND coalesce((d.chunk_acl->c.id->'allow') ? current_setting('agentos.member_id'),true) AND NOT coalesce((d.chunk_acl->c.id->'deny') ? current_setting('agentos.member_id'),false)`, s.tenant, s.app, ref.SourceID, ref.DocumentID, ref.ChunkID, ref.ContentRevision, ref.ACLRevision).Scan(&out.Title, &out.Body, &out.Anchor)
+		err := q.QueryRow(ctx, `SELECT d.title,c.body,c.anchor FROM knowledge.chunks c JOIN knowledge.documents d ON (d.tenant_id,d.app_id,d.source_id,d.id)=(c.tenant_id,c.app_id,c.source_id,c.document_id) WHERE c.tenant_id=$1 AND c.app_id=$2 AND c.source_id=$3 AND c.document_id=$4 AND c.id=$5 AND c.content_revision=$6 AND d.acl_revision=$7 AND d.acl_content_revision=$6 AND knowledge.source_ready(d.source_id,d.source_epoch) AND NOT d.deleted AND d.valid_until>clock_timestamp() AND current_setting('agentos.member_id')::uuid=ANY(d.allow_members) AND NOT current_setting('agentos.member_id')::uuid=ANY(d.deny_members) AND coalesce((d.chunk_acl->c.id->'allow') ? current_setting('agentos.member_id'),true) AND NOT coalesce((d.chunk_acl->c.id->'deny') ? current_setting('agentos.member_id'),false)`, s.tenant, s.app, ref.SourceID, ref.DocumentID, ref.ChunkID, ref.ContentRevision, ref.ACLRevision).Scan(&out.Title, &out.Body, &out.Anchor)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrUnavailable
 		}

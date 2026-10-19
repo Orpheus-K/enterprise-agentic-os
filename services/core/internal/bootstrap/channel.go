@@ -19,6 +19,7 @@ import (
 	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/health"
 	"agentos.local/core/internal/identity"
+	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/operations"
 	"agentos.local/core/internal/telemetry"
@@ -236,10 +237,15 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		if err != nil {
 			return nil, err
 		}
-		channel.Operations, err = operations.New(token, c.operator(), store, channel.Readiness, tel)
+		operationsAPI, err := operations.New(token, c.operator(), store, channel.Readiness, tel)
 		if err != nil {
 			return nil, err
 		}
+		knowledgeStore, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+		if err != nil {
+			return nil, err
+		}
+		channel.Operations = operationsAPI.WithKnowledge(knowledgeStore)
 	}
 	opened = true
 	return channel, nil

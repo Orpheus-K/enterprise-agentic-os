@@ -27,8 +27,8 @@
 - 修正：OTel 默认合并环境资源属性导致脱敏反例失败，已在出口白名单投影；分页测试逐页独立解码，避免复用旧游标；修正后整套通过。
 - 证明：缺少数据库测试环境直接失败；测试残留数据库/登录角色均为 0；本次专用数据库已停止。
 - 验证：本轮 `pnpm check`、`pnpm test:db`、`pnpm test:e2e`（2 项）通过；专用 PG 已停止。日志与联调清单见 [M1 验收记录](../deploy/m1-acceptance.md)。
-- 阻塞：Windows race 启用 CGO 后仍缺 gcc；远端 CI / Linux race 未运行。用户已授权在 Orpheus-K 创建公有仓库并推送，`gh auth status` 显示未登录，等待本机登录后触发现有 push 工作流。
-- 保留：[产品](../enterprise-agentic-os-docs/README.md)、[架构](../enterprise-agentic-os-architecture/README.md)与 [规范](../AGENTS.md) 为设计真源；Git 已初始化，未提交或推送。
+- 通过：已创建[公有仓库](https://github.com/Orpheus-K/enterprise-agentic-os)，代码提交 `089cec5` 的[首轮 CI](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39198385216) 全部成功：全量检查、真实 PG、普通/integration 两组 Linux race、浏览器测试。日志 `.tools/m1-ci.log` 保留本地；Windows 缺 gcc 不影响该 Linux 证据。
+- 保留：[产品](../enterprise-agentic-os-docs/README.md)、[架构](../enterprise-agentic-os-architecture/README.md)与 [规范](../AGENTS.md) 为设计真源；Git 已提交并推送至公有仓库。
 
 ## 明确未决与下一步
 
@@ -40,4 +40,4 @@
 - 部署：按 [飞书指南](../deploy/feishu.md) 预置 IAM 映射与获准模型配置；`AGENTOS_CHANNEL_CONFIG` 缺省仅启动控制台；凭证由环境注入，不输出或提交。
 - 运维：按 [运维配置](../deploy/operations.md) 可选开启独立凭证与能力；令牌轮换需重启，数据库撤权影响后续请求；当前无 OIDC、审计 UI、OTLP 或诊断导出。
 - 保留：running/unknown 需人工核对，禁止直接重发；pending 重启续处理，旧配置任务不转用新模型；详见 [链路契约](../contracts/feishu-model.md)。
-- 接续：完成 GitHub 登录后创建公有仓库、核对发布文件、提交推送并记录 Actions URL/SHA；按验收记录注入真实测试租户/模型配置，完成单聊、故障与权限验证后判定 M1。M2 再完善租约、结果核对与自动恢复；组织同步、群聊接收范围与 Python RPC 尚未实现。
+- 接续：按验收记录注入真实测试租户/模型配置，完成单聊、故障与权限验证后判定 M1。M2 再完善租约、结果核对与自动恢复；组织同步、群聊接收范围与 Python RPC 尚未实现。

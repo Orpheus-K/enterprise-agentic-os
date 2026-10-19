@@ -4,7 +4,7 @@
 
 ## 固定本次证据
 
-2026-10-19，Windows amd64、Go 1.27.2、Node 22.18、pnpm 10.15、Python 3.13.13、PostgreSQL 17.11；工作区尚无提交 SHA。
+2026-10-19，Windows amd64、Go 1.27.2、Node 22.18、pnpm 10.15、Python 3.13.13、PostgreSQL 17.11；首轮远端验证提交 `089cec5c96ed9171f1e991d1ce518b28ae20bea0`。
 
 | 检查 | 结果 | 本地证据（忽略文件） |
 |---|---|---|
@@ -12,10 +12,10 @@
 | `pnpm test:db` | 通过，真实 PG 迁移、事务、身份、链路与运维隔离；测试集群已停止 | `.tools/m1-db.log` |
 | `pnpm test:e2e` | 通过，2 项 Chromium 测试 | `.tools/m1-e2e.log` |
 | `CGO_ENABLED=1 go test -race ./...` | 阻塞，Windows 找不到 gcc | `.tools/m1-race.log` |
-| 远端 Check / Linux race | 未运行；已授权创建 Orpheus-K 公有仓库，CLI 尚未登录 | 等待提交 SHA 与 Actions run URL |
+| 远端 Check / Linux race | 全部通过：全量检查、真实 PG、普通及 integration race、浏览器测试 | [首轮 CI](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39198385216) |
 | 真实飞书与模型 | 未运行，未提供配置与注入凭证 | 待填任务 ID、Trace_ID、结果 |
 
-本地链路测试使用真实数据库和协议替身；不能作为真实飞书或模型可用证据。远端工作流见 [Check](../.github/workflows/check.yml)，当前仅 push / pull_request 触发。
+本地链路测试使用真实数据库和协议替身；不能作为真实飞书或模型可用证据。远端工作流见 [Check](../.github/workflows/check.yml)，当前仅 push / pull_request 触发。首轮运行成功；仅验收文档更新使用 `[skip ci]`，实现与工作流保持已验证提交内容。CI 提示 Action 的 Node 20 运行时弃用及 ubuntu-latest 镜像迁移，作为后续依赖维护项，不代表本轮测试失败。
 
 ## 准备真实配置
 
@@ -53,4 +53,4 @@
 
 ## 判定退出
 
-本地验证已通过；当前 M1 **未退出**。补齐远端 CI 两组 race、真实单聊与故障/权限证据后再判定。失败项定位到责任模块；未知结果先核对，不进入 M2 掩盖缺口。当前状态回写 [里程碑笔记](../.agents/NOTES.md)。
+本地与远端 CI 验证已通过；当前 M1 **未退出**。补齐真实单聊与故障/权限证据后再判定。失败项定位到责任模块；未知结果先核对，不进入 M2 掩盖缺口。当前状态回写 [里程碑笔记](../.agents/NOTES.md)。

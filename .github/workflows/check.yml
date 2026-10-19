@@ -1,0 +1,60 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: services/core/go.mod
+          cache: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: 0.11.8
+          python-version: '3.13'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f deploy/postgres/roles.sql
+        env:
+          PGPASSWORD: ci-test-only
+      - run: pnpm test:db
+        env:
+          AGENTOS_TEST_ADMIN_DATABASE_URL: postgres://postgres:ci-test-only@127.0.0.1:5432/postgres?sslmode=disable
+      - run: go test -race ./...
+        working-directory: services/core
+      - run: go test -race -tags=integration -count=1 ./internal/...
+        working-directory: services/core
+        env:
+          AGENTOS_TEST_ADMIN_DATABASE_URL: postgres://postgres:ci-test-only@127.0.0.1:5432/postgres?sslmode=disable
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

@@ -1,0 +1,29 @@
+{
+  "name": "@agentos/ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./button": "./src/components/button.tsx",
+    "./components/*": "./src/components/*.tsx",
+    "./styles.css": "./src/styles.css",
+    "./utils": "./src/lib/utils.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@agentos/config": "workspace:*"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.5.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3"
+  }
+}

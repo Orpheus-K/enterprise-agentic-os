@@ -1,0 +1,19 @@
+{
+  "name": "@agentos/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentos/contracts": "workspace:*",
+    "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@agentos/config": "workspace:*"
+  }
+}

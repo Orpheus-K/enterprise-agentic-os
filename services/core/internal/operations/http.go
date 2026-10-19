@@ -1,0 +1,150 @@
+package operations
+
+import (
+	"agentos.local/core/internal/conversation"
+	"agentos.local/core/internal/database"
+	"agentos.local/core/internal/health"
+	"agentos.local/core/internal/identity"
+	identitypg "agentos.local/core/internal/identity/postgres"
+	"agentos.local/core/internal/telemetry"
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"github.com/google/uuid"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type API struct {
+	token     [32]byte
+	identity  identity.ExternalIdentity
+	store     *conversation.Store
+	readiness *health.Readiness
+	telemetry *telemetry.Telemetry
+}
+
+func New(token string, external identity.ExternalIdentity, store *conversation.Store, ready *health.Readiness, tel *telemetry.Telemetry) (*API, error) {
+	if len(token) < 32 || strings.ContainsAny(token, " \t\r\n") {
+		return nil, errors.New("operations token must contain at least 32 non-whitespace bytes")
+	}
+	if err := external.Validate(); err != nil {
+		return nil, err
+	}
+	return &API{sha256.Sum256([]byte(token)), external, store, ready, tel}, nil
+}
+func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	operation := "ops.unknown"
+	switch r.URL.Path {
+	case "/api/ops/audit":
+		operation = "ops.audit"
+	case "/api/ops/status":
+		operation = "ops.status"
+	case "/api/ops/metrics":
+		operation = "ops.metrics"
+	}
+	ctx, finish := a.telemetry.Start(r.Context(), operation)
+	ok := false
+	defer func() { finish(ok) }()
+	// No cookies, query tokens, identity headers or remote trace propagation.
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(401)
+		return
+	}
+	hash := sha256.Sum256([]byte(strings.TrimPrefix(values[0], "Bearer ")))
+	if subtle.ConstantTimeCompare(hash[:], a.token[:]) != 1 {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(401)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if operation == "ops.unknown" {
+		w.WriteHeader(404)
+		return
+	}
+	var result any
+	var err error
+	if operation == "ops.audit" {
+		query, parseErr := parseAudit(r)
+		if parseErr != nil {
+			w.WriteHeader(400)
+			return
+		}
+		result, err = a.store.ReadAudit(ctx, a.identity, query.task, query.after, query.limit)
+	} else {
+		if r.URL.RawQuery != "" {
+			w.WriteHeader(400)
+			return
+		}
+		err = a.store.Operation(ctx, a.identity, "status.read", func(database.Queries) error { return nil })
+		if err == nil {
+			if operation == "ops.status" {
+				result = a.readiness.Snapshot(ctx)
+			} else {
+				result, err = a.telemetry.Snapshot(ctx)
+			}
+		}
+	}
+	if err != nil {
+		switch {
+		case errors.Is(err, identity.ErrUnauthenticated):
+			w.WriteHeader(401)
+		case errors.Is(err, identitypg.ErrForbidden):
+			w.WriteHeader(403)
+		default:
+			w.WriteHeader(503)
+		}
+		return
+	}
+	ok = json.NewEncoder(w).Encode(result) == nil
+}
+
+type auditQuery struct {
+	task  uuid.UUID
+	after int64
+	limit int
+}
+
+func parseAudit(r *http.Request) (auditQuery, error) {
+	q := auditQuery{limit: 50}
+	values, parseErr := url.ParseQuery(r.URL.RawQuery)
+	if parseErr != nil {
+		return q, errors.New("invalid query encoding")
+	}
+	for key, v := range values {
+		if len(v) != 1 || (key != "task_id" && key != "after" && key != "limit") {
+			return q, errors.New("invalid query")
+		}
+	}
+	var err error
+	q.task, err = uuid.Parse(values.Get("task_id"))
+	if err != nil || q.task == uuid.Nil {
+		return q, errors.New("task_id required")
+	}
+	if values.Has("after") {
+		q.after, err = strconv.ParseInt(values.Get("after"), 10, 64)
+		if err != nil || q.after < 0 {
+			return q, errors.New("invalid cursor")
+		}
+	}
+	if values.Has("limit") {
+		q.limit, err = strconv.Atoi(values.Get("limit"))
+		if err != nil || q.limit < 1 || q.limit > 100 {
+			return q, errors.New("invalid limit")
+		}
+	}
+	return q, nil
+}

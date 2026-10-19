@@ -1,0 +1,8 @@
+{
+  "name": "@agentos/config",
+  "private": true,
+  "version": "0.0.0",
+  "exports": {
+    "./tsconfig.json": "./tsconfig.json"
+  }
+}

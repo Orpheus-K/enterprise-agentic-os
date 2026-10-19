@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.tools/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.env
+.env.*
+!.env.example
+services/core/internal/webassets/site/
+test-results/
+playwright-report/

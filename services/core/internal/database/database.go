@@ -46,7 +46,7 @@ func Open(ctx context.Context, url string, maxConnections int32) (*DB, error) {
               )
               AND NOT EXISTS (
                 SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname IN ('iam','channel') AND pg_has_role(current_user, c.relowner, 'MEMBER')
+                WHERE n.nspname IN ('iam','channel','knowledge') AND pg_has_role(current_user, c.relowner, 'MEMBER')
               )`).Scan(&safe)
 		if err != nil {
 			return err
@@ -58,7 +58,7 @@ func Open(ctx context.Context, url string, maxConnections int32) (*DB, error) {
 		if err := connection.QueryRow(ctx, `SELECT coalesce(max(version_id), 0) FROM public.goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 14 {
+		if version != 15 {
 			return fmt.Errorf("unsupported database schema version: %d", version)
 		}
 		return nil
@@ -95,7 +95,7 @@ func (d *DB) Transaction(ctx context.Context, fn func(Queries) error) (err error
 	_, err = tx.Exec(ctx, `SELECT
         set_config('agentos.tenant_id', '', true), set_config('agentos.member_id', '', true),
         set_config('agentos.provider', '', true), set_config('agentos.issuer', '', true),
-        set_config('agentos.subject', '', true)`)
+        set_config('agentos.subject', '', true), set_config('agentos.app_id', '', true)`)
 	if err != nil {
 		return err
 	}

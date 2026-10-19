@@ -70,3 +70,9 @@ schema 17 实现精确余弦候选检索（A05），不含 Embedding 调用、AN
 验证：[消费者单元测试](../services/core/internal/knowledge/ground_test.go)、[消费者真实 PG 测试](../services/core/internal/knowledge/ground_integration_test.go)。去掉群聊闸门或把所有读取错误当作 Dropped 的变异均使测试失败。
 
 前置环境：[向量驱动部署与探针](../deploy/postgres/README.md#准备向量驱动)。驱动探针与业务验收分别记录。
+## 查询向量来源（库层）
+
+9. 嵌入客户端：`model.Embedder` 调用管理员批准的 OpenAI 兼容 `/embeddings` 端点，配置须含 HTTPS（HTTP 需显式批准）URL、模型名、管理员声明的 Revision 与维度（1—4096）；输入 1—16000 字节。响应必须恰好一个有限向量且维度与配置一致，否则失败，不截断、补零或平均；错误与日志不含正文、密钥或远端错误内容。Revision 与维度须与 knowledge.embedding_spaces 对应行一致，Search/PublishVectors 已对模型、版本、维度做 409/400 拦截，远端模型被静默升级须通过新建空间体现。
+10. 当前边界：尚未接入配置加载、启动装配、切片批量嵌入发布或对话路由，没有运行路径调用该客户端；中文召回质量未评估。
+
+验证：[嵌入客户端测试](../services/core/internal/model/embedding_test.go) 使用本地替身端点；真实模型可达性与质量需另行联调。

@@ -5,6 +5,10 @@
 - 进展：2026-10-19，工程 M1、M2 已退出；M3 已完成：知识存储/健康（15—16）、授权向量检索（17）、引用消费者库层、任务清单与基础统计（18）。整体蓝图未完成。
 - 推进计划：①消费者签收 ✔ ②审计查询/统计 ③计算隔离 ④原生来源连接器 ⑤检索接入对话与交付 ⑥SQLite 轻量驱动 ⑦离线安装与备份恢复 ⑧M3 退出验收。
 
+## M3 嵌入客户端（库层）
+
+- 实现：model.Embedder（固定 URL/模型/Revision/维度，拒绝维度或条数不符、溢出、超大响应；错误脱敏），共用 post() 已重构自 Client.request。契约见 [知识契约第 9—10 条](../contracts/knowledge.md)。去掉维度检查的变异使测试失败。未接入配置、启动装配与批量嵌入发布。
+
 ## M3 PG 备份恢复演练
 
 - 实现：[backup-restore.sh](../deploy/postgres/backup-restore.sh)；manifest 事实比对、校验和、非空目标拒绝。演练与未覆盖项见 [PG 指南](../deploy/postgres/README.md#备份与恢复)。演练脚本与凭证在 .tools（忽略），日志 m3-backup-drill.log，残留 0，集群已停止。

@@ -100,15 +100,20 @@ func (c *Client) complete(ctx context.Context, instructions, text string) (strin
 }
 
 func (c *Client) request(ctx context.Context, body []byte) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.Endpoint, bytes.NewReader(body))
+	return post(ctx, c.http, c.config.Endpoint, c.key, body, 65536)
+}
+
+// post sends one JSON request. Error text never includes the body, key or remote error content.
+func post(ctx context.Context, client *http.Client, endpoint, key string, body []byte, limit int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, errors.New("invalid model request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.New("model transport failed; result may be unknown")
 	}
@@ -116,8 +121,8 @@ func (c *Client) request(ctx context.Context, body []byte) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("model HTTP status %d", resp.StatusCode)
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 65537))
-	if err != nil || len(raw) > 65536 {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil || int64(len(raw)) > limit {
 		return nil, errors.New("model response unreadable or oversized")
 	}
 	return raw, nil

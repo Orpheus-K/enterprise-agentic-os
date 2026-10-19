@@ -2,7 +2,7 @@
 
 ## 准备可信绑定
 
-1. 按 [数据库指南](postgres/README.md) 升级至 schema 16，使用独立运行账户。
+1. 按 [数据库指南](postgres/README.md) 升级至 schema 17，使用独立运行账户。
 2. 创建飞书自建应用与机器人，订阅 `im.message.receive_v1`，配置单聊接收与机器人回复权限。只在测试租户验证，不开启无授权知识源或工具。
 3. 由受控管理员预置 IAM 租户、成员与身份映射；Provider=`feishu`，Issuer=`feishu:<AppID>:<TenantKey>`，Subject 为该应用的用户 OpenID。运行账户无 IAM 写权；当前没有自动注册用户或组织同步。
 4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。
@@ -50,6 +50,6 @@
 
 技能自动匹配：将 `skills.selected` 替换为 `skills.routes: [{name, revision}, ...]`，同时在 assets 保留候选与在途旧版本。两种选择模式不可同时配置；授权、候选固定与失败规则见 [技能路由契约](../contracts/skills.md#渐进路由与恢复)。
 
-审批通知：可在 approval 中设置 notify_subject，为当前安装下映射到指定审批成员的飞书 OpenID。通知使用机器人已有发送权限，发送绑定版本的审批初稿卡片；没有有效身份映射或 task.approve 则取消。升级 schema 16 后按 [通知契约](../contracts/approval-notices.md) 验证，不向旧任务追溯补发。
+审批通知：可在 approval 中设置 notify_subject，为当前安装下映射到指定审批成员的飞书 OpenID。通知使用机器人已有发送权限，发送绑定版本的审批初稿卡片；没有有效身份映射或 task.approve 则取消。升级至 schema 16 及以上后按 [通知契约](../contracts/approval-notices.md) 验证，不向旧任务追溯补发。
 
 审批回调：在飞书应用订阅 card.action.trigger；使用已配置的可信长连接或加密验签 Webhook。审批成员须在当前安装 issuer 下具有有效飞书身份映射及 task.approve。发布与平台现场交互需单独验证；本机合成测试不证明真实送达。

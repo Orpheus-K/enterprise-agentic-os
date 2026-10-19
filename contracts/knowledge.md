@@ -1,6 +1,6 @@
 # 约束权限感知知识管道
 
-对齐 R02/R10/R12、A05/A06/A08、V06—V08；依据 [知识架构](../enterprise-agentic-os-architecture/05-权限知识与计算隔离.md)。本文件为 M3 实现契约。schema 15 已提供 PG 知识存储模块及合成来源的版本化写入/授权读取；原生来源同步、检索服务和模型接入尚未实现。
+对齐 R02/R10/R12、A05/A06/A08、V06—V08；依据 [知识架构](../enterprise-agentic-os-architecture/05-权限知识与计算隔离.md)。本文件为 M3 实现契约。schema 15—17 已提供 PG 知识存储、版本化写入/授权读取、来源健康世代及授权向量候选检索；原生来源同步、Embedding 调用与模型/交付消费者尚未实现。
 
 ## 分离内容与权限
 
@@ -49,12 +49,16 @@
 
 验证：[健康/世代数据库测试](../services/core/internal/knowledge/health_integration_test.go)、[HTTP 鉴权测试](../services/core/internal/operations/knowledge_integration_test.go)。先验证恢复不放宽旧授权，再接真实来源事件与授权检索。
 
-## 约束下一片向量检索（待实现）
+## 授权向量候选检索
 
-1. 固定空间：管理员配置 Embedding 模型版本与维度；索引与查询必须匹配同一空间，拒绝自动截断、补零或跨模型比较。
-2. 发布索引：获权同步者提交绑定内容版本的完整切片向量；部分缺失、过期内容、重复冲突或非有限数显式失败。发布与审计原子提交，ACL 变化不重算向量。
-3. 检索候选：复用当前身份、安装、内容/ACL 版本与健康世代，在数据库内过滤再返回有限条候选；首片采用 pgvector 精确余弦排序，不启用未经召回认证的 ANN 或全文融合。
-4. 消费引用：候选携带现有 Reference；模型消费、引用读取与交付须重新核验当前权限，不能把候选正文缓存当作授权。最终交付消费者未接入前，不宣称完成 RAG。
-5. 验证边界：禁止未授权标题/正文/计数出库；覆盖不同租户、安装、同步人、切片拒绝、来源失效、内容更新、撤权及数据库重开。合成向量仅验证检索语义，不代替真实 Embedding 质量评估。
+schema 17 实现精确余弦候选检索（A05），不含 Embedding 调用、ANN、全文融合或最终 RAG 交付消费者。
 
-前置环境：[向量驱动部署与探针](../deploy/postgres/README.md#准备向量驱动)。驱动探针与业务验收分别记录，不将前者当作本节实现完成。
+1. 固定空间：管理员预置 knowledge.embedding_spaces（租户/安装/空间 ID、模型、模型版本、维度 1—4096），默认禁用；运行角色只读已启用空间。模型、版本、维度不可原地修改，换模型须新建空间。发布与查询都须声明相同模型及版本，不匹配 409；维度不符 400，不截断、补零或跨模型比较。
+2. 发布索引：PublishVectors 由来源 sync_member 提交，绑定当前 content_revision 且必须恰好覆盖该版本全部切片。缺失/多余/重复切片、零向量或非有限数 400；文档缺失、已删除、版本不等或同版本不同向量 409；空间不可用 404。同输入重复幂等；替换、向量集记录与审计同事务。ACL 与健康变化不触碰向量；新内容版本替换切片时级联删除旧向量，须重新发布。
+3. 检索候选：Search 输入空间、查询向量与 limit（1—50）。同一 SQL 内先应用与 Read 共享的授权谓词（当前身份、安装、内容/ACL 版本、健康世代、有效期、文档与切片允许/拒绝）再按距离排序，并叠加强制 RLS；同步身份不因同步权跳过成员 ACL。更近的未授权行不能挤掉或暴露授权结果，不返回总数。
+4. 消费引用：候选仅含 Reference 与距离，不含标题、正文或锚点。使用方须以 Read 取证，按当前权限重验；撤权、健康失效或版本更新后旧候选读取 404。每次检索写入 search_audit（空间、成员、请求/返回条数），不记录查询向量；审计失败不返回候选。
+5. HTTP 入口：POST /api/ops/knowledge/vectors 与 /search 复用上文认证、严格 JSON 与错误码；search 返回 `{"candidates":[...]}`。
+
+验证：[向量真实 PG 测试](../services/core/internal/knowledge/vectors_integration_test.go)、[迁移前置测试](../services/core/internal/database/migrate_integration_test.go)、[HTTP 测试](../services/core/internal/operations/knowledge_integration_test.go)。合成三维向量只验证检索与授权语义，不代替真实 Embedding 质量、中文召回或容量评估。最终模型消费与交付复核未接入前，不宣称完成 RAG。
+
+前置环境：[向量驱动部署与探针](../deploy/postgres/README.md#准备向量驱动)。驱动探针与业务验收分别记录。

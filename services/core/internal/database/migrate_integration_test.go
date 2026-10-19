@@ -4,6 +4,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"sync"
 	"testing"
@@ -119,7 +120,7 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	count, migrateErr := m.Up(ctx)
 	closeErr := m.Close()
-	if migrateErr != nil || closeErr != nil || count != 15 {
+	if migrateErr != nil || closeErr != nil || count != 16 {
 		t.Fatalf("upgrade count=%d migration=%v close=%v", count, migrateErr, closeErr)
 	}
 	var name string
@@ -168,7 +169,7 @@ func TestUpgradePreservesLegacyTasksAndAudit(t *testing.T) {
 	}
 	count, upErr := m.Up(ctx)
 	closeErr := m.Close()
-	if upErr != nil || closeErr != nil || count != 14 {
+	if upErr != nil || closeErr != nil || count != 15 {
 		t.Fatalf("upgrade count=%d up=%v close=%v", count, upErr, closeErr)
 	}
 	var preserved bool
@@ -211,7 +212,7 @@ func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, err := m.Up(ctx)
-	if err != nil || count != 13 {
+	if err != nil || count != 14 {
 		t.Fatalf("migration: %d %v", count, err)
 	}
 	if err := m.Close(); err != nil {
@@ -231,4 +232,47 @@ func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
 	if err != nil || events != 6 {
 		t.Fatal("legacy events lost or recovery events missing")
 	}
+}
+
+func TestVectorMigrationRequiresAdministratorExtension(t *testing.T) {
+	f := testpg.New(t)
+	ctx := t.Context()
+	if _, err := f.Admin.Exec(ctx, "DROP EXTENSION vector"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewMigrator(ctx, f.MigrationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Up(ctx); err == nil {
+		t.Fatal("schema 17 applied without the administrator-installed extension")
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var version int64
+	var extension bool
+	if err := f.Admin.QueryRow(ctx, `SELECT max(version_id),EXISTS(SELECT 1 FROM pg_extension WHERE extname='vector') FROM public.goose_db_version WHERE is_applied`).Scan(&version, &extension); err != nil || version != 16 || extension {
+		t.Fatalf("version=%d extension=%v err=%v", version, extension, err)
+	}
+	if db, err := Open(ctx, f.RuntimeURL, 1); err == nil {
+		db.Close()
+		t.Fatal("runtime accepted schema 16")
+	}
+	if _, err := f.Admin.Exec(ctx, "CREATE EXTENSION vector WITH SCHEMA public VERSION '0.8.7'"); err != nil {
+		t.Fatal(err)
+	}
+	m, err = NewMigrator(ctx, f.MigrationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, upErr := m.Up(ctx)
+	if err := errors.Join(upErr, m.Close()); err != nil || count != 1 {
+		t.Fatalf("count=%d err=%v", count, err)
+	}
+	db, err := Open(ctx, f.RuntimeURL, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
 }

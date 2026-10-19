@@ -81,6 +81,10 @@ func New(t *testing.T) *Fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mirrors deploy/postgres/vector.sql: the administrator, not the migrator, owns the extension.
+	if _, err := databaseAdmin.Exec(ctx, "CREATE EXTENSION vector WITH SCHEMA public VERSION '0.8.7'"); err != nil {
+		t.Fatal(err)
+	}
 	fixture := &Fixture{Admin: databaseAdmin, AdminURL: base.String()}
 	base.User = url.UserPassword(migratorName, migrationPassword)
 	fixture.MigrationURL = base.String()

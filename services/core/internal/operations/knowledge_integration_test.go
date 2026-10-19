@@ -65,6 +65,39 @@ func TestKnowledgeControlledHTTP(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || !bytes.Contains(w.Body.Bytes(), []byte("Synthetic body")) {
 		t.Fatal(w.Code)
 	}
+	space := knowledge.Space{ID: uuid.New(), Model: "synthetic-embedding", ModelRevision: "v1"}
+	if _, err := f.pg.Admin.Exec(t.Context(), "INSERT INTO knowledge.embedding_spaces VALUES($1,'app_a',$2,$3,$4,3,true)", f.tenant, space.ID, space.Model, space.ModelRevision); err != nil {
+		t.Fatal(err)
+	}
+	vectors := knowledge.VectorSet{Space: space, SourceID: source, DocumentID: "synthetic", ContentRevision: 1, Vectors: []knowledge.ChunkVector{{ChunkID: "p1", Embedding: []float32{1, 0, 0}}}}
+	if w := request("vectors", vectors, true); w.Code != 200 {
+		t.Fatal("publish vectors", w.Code)
+	}
+	query := knowledge.SearchQuery{Space: space, Embedding: []float32{1, 0, 0}, Limit: 5}
+	w = request("search", query, true)
+	var found struct {
+		Candidates []knowledge.Candidate `json:"candidates"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &found) != nil || len(found.Candidates) != 1 || found.Candidates[0].Reference != ref || bytes.Contains(w.Body.Bytes(), []byte("Synthetic body")) {
+		t.Fatal("search response carries text or wrong candidates", w.Code, w.Body.String())
+	}
+	for name, c := range map[string]struct {
+		path string
+		in   any
+		code int
+	}{
+		"wrong_dims":   {"search", knowledge.SearchQuery{Space: space, Embedding: []float32{1, 0}, Limit: 5}, 400},
+		"wrong_model":  {"search", knowledge.SearchQuery{Space: knowledge.Space{ID: space.ID, Model: "other", ModelRevision: "v1"}, Embedding: []float32{1, 0, 0}, Limit: 5}, 409},
+		"no_space":     {"search", knowledge.SearchQuery{Space: knowledge.Space{ID: uuid.New(), Model: "synthetic-embedding", ModelRevision: "v1"}, Embedding: []float32{1, 0, 0}, Limit: 5}, 404},
+		"stale_vector": {"vectors", knowledge.VectorSet{Space: space, SourceID: source, DocumentID: "synthetic", ContentRevision: 2, Vectors: vectors.Vectors}, 409},
+	} {
+		if w := request(c.path, c.in, true); w.Code != c.code {
+			t.Errorf("%s: %d want %d", name, w.Code, c.code)
+		}
+	}
+	if w := request("search", map[string]any{"space_id": space.ID, "model": space.Model, "model_revision": space.ModelRevision, "embedding": []float32{1, 0, 0}, "limit": 5, "member_id": f.member}, true); w.Code != 400 {
+		t.Fatal("caller identity accepted in search", w.Code)
+	}
 	if w := request("health", map[string]any{"source_id": source, "tenant_id": f.tenant}, true); w.Code != 400 {
 		t.Fatal("caller identity accepted", w.Code)
 	}
@@ -93,6 +126,9 @@ func TestKnowledgeControlledHTTP(t *testing.T) {
 	}
 	if w := request("read", ref, true); w.Code != 404 || bytes.Contains(w.Body.Bytes(), []byte("Synthetic body")) {
 		t.Fatal("unhealthy read", w.Code)
+	}
+	if w := request("search", query, true); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"candidates":[]`)) {
+		t.Fatal("unhealthy search", w.Code, w.Body.String())
 	}
 	if _, err := f.pg.Admin.Exec(t.Context(), "UPDATE iam.identity_links SET enabled=false WHERE member_id=$1", f.member); err != nil {
 		t.Fatal(err)

@@ -46,6 +46,26 @@ func (a *API) knowledgeOperation(ctx context.Context, r *http.Request, w http.Re
 			return nil, err
 		}
 		return a.knowledge.Read(ctx, a.identity, in)
+	case "/api/ops/knowledge/vectors":
+		var in knowledge.VectorSet
+		if err := decode(&in); err != nil {
+			return nil, err
+		}
+		if err := a.knowledge.PublishVectors(ctx, a.identity, in); err != nil {
+			return nil, err
+		}
+	case "/api/ops/knowledge/search":
+		var in knowledge.SearchQuery
+		if err := decode(&in); err != nil {
+			return nil, err
+		}
+		candidates, err := a.knowledge.Search(ctx, a.identity, in)
+		if err != nil {
+			return nil, err
+		}
+		return struct {
+			Candidates []knowledge.Candidate `json:"candidates"`
+		}{candidates}, nil
 	default:
 		return nil, knowledge.ErrInvalid
 	}

@@ -170,13 +170,17 @@ func (s *Store) PutACL(ctx context.Context, actor identity.ExternalIdentity, a A
 	})
 }
 
+// visibleChunk is the single member read predicate for chunk c of document d. It is
+// explicit because the sync policy also exposes rows to the source's sync identity.
+const visibleChunk = `knowledge.source_ready(d.source_id,d.source_epoch) AND NOT d.deleted AND d.content_revision=c.content_revision AND d.acl_content_revision=c.content_revision AND d.acl_revision>0 AND d.valid_until>clock_timestamp() AND current_setting('agentos.member_id')::uuid=ANY(d.allow_members) AND NOT current_setting('agentos.member_id')::uuid=ANY(d.deny_members) AND coalesce((d.chunk_acl->c.id->'allow') ? current_setting('agentos.member_id'),true) AND NOT coalesce((d.chunk_acl->c.id->'deny') ? current_setting('agentos.member_id'),false)`
+
 func (s *Store) Read(ctx context.Context, actor identity.ExternalIdentity, ref Reference) (Evidence, error) {
 	if ref.SourceID == uuid.Nil || !label(ref.DocumentID, 256) || !label(ref.ChunkID, 128) || ref.ContentRevision < 1 || ref.ACLRevision < 1 {
 		return Evidence{}, ErrInvalid
 	}
 	out := Evidence{Reference: ref}
 	err := s.within(ctx, actor, func(q database.Queries) error {
-		err := q.QueryRow(ctx, `SELECT d.title,c.body,c.anchor FROM knowledge.chunks c JOIN knowledge.documents d ON (d.tenant_id,d.app_id,d.source_id,d.id)=(c.tenant_id,c.app_id,c.source_id,c.document_id) WHERE c.tenant_id=$1 AND c.app_id=$2 AND c.source_id=$3 AND c.document_id=$4 AND c.id=$5 AND c.content_revision=$6 AND d.acl_revision=$7 AND d.acl_content_revision=$6 AND knowledge.source_ready(d.source_id,d.source_epoch) AND NOT d.deleted AND d.valid_until>clock_timestamp() AND current_setting('agentos.member_id')::uuid=ANY(d.allow_members) AND NOT current_setting('agentos.member_id')::uuid=ANY(d.deny_members) AND coalesce((d.chunk_acl->c.id->'allow') ? current_setting('agentos.member_id'),true) AND NOT coalesce((d.chunk_acl->c.id->'deny') ? current_setting('agentos.member_id'),false)`, s.tenant, s.app, ref.SourceID, ref.DocumentID, ref.ChunkID, ref.ContentRevision, ref.ACLRevision).Scan(&out.Title, &out.Body, &out.Anchor)
+		err := q.QueryRow(ctx, `SELECT d.title,c.body,c.anchor FROM knowledge.chunks c JOIN knowledge.documents d ON (d.tenant_id,d.app_id,d.source_id,d.id)=(c.tenant_id,c.app_id,c.source_id,c.document_id) WHERE c.tenant_id=$1 AND c.app_id=$2 AND c.source_id=$3 AND c.document_id=$4 AND c.id=$5 AND c.content_revision=$6 AND d.acl_revision=$7 AND `+visibleChunk, s.tenant, s.app, ref.SourceID, ref.DocumentID, ref.ChunkID, ref.ContentRevision, ref.ACLRevision).Scan(&out.Title, &out.Body, &out.Anchor)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrUnavailable
 		}

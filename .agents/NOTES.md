@@ -2,19 +2,18 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-19，工程 M1、M2 已退出；M3 第二切片实现受控知识入口与健康世代，已通过本机验证，自动目标继续，整体蓝图未完成。
-- 真源：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md)、[M2 验收](../deploy/m2-acceptance.md)、[知识管道契约](../contracts/knowledge.md)。知识契约区分已实现存储与未接入来源/检索。
+- 进展：2026-10-19，工程 M1、M2 已退出；M3 第三切片实现授权向量候选检索（schema 17），本机全量验证通过，远端 CI 见下；整体蓝图未完成。
+- 真源：[研发路线](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md)、[M2 验收](../deploy/m2-acceptance.md)、[知识管道契约](../contracts/knowledge.md)。契约区分已实现存储/检索与未接入来源/Embedding/消费者。
 
-## 当前 M3 健康与入口切片
+## 当前 M3 向量检索切片
 
-- 接入入口：复用 operations Bearer 绑定身份，提供 knowledge content/acl/health/read 四个 POST；严格 JSON、8 MiB 上限、拒绝请求身份与查询参数，读取按当前 ACL，不因同步人绕过。
-- 固定健康：schema 16 保存健康版本/epoch/期限；过期、失联与行政停用使原授权失效，恢复须新世代健康＋新版本 ACL，不重写内容。连续有效心跳和重复事件不改变世代。
-- 阻断停用：管理员 enabled=true→false 与健康失效同事务；重新启用不放行旧 ACL。旧 schema 15 来源升级后默认缺健康证明，必须重新确认。
-- 验证进展：全套 pnpm test:db 与 pnpm check 均退出 0（m3-health-full-db.log、m3-health-check.log）；停用触发器更新后另补跑迁移/健康/HTTP 定向通过（m3-health-final-targeted.log）。git diff --check 通过；测试库/角色残留 0，PG 已停止。
-- 远端证据：fc2d6c6（schema 16）的 [CI 39237901826](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39237901826) completed/success，日志 .tools/m3-health-ci-success.log。
-- 向量驱动：PG 17.11＋pgvector 0.8.7 探针在 WSL `17/agentos-m3`（55440）通过（m3-vector-probe.log）；CI 改用摘要固定的 pgvector 镜像并执行同一探针。驱动认证不等于检索实现。
-- 限定范围：健康信号由获权同步者报告；原生来源游标拉取/丢失检测、组织权限解析与检索/模型接入仍待实现。当前不宣称完成原生同步或 RAG。
-
+- 固定空间：00017 要求管理员预装 pgvector 0.8.7，缺失则迁移失败停在 16；embedding_spaces 由管理员预置，模型/版本/维度不可原地改。
+- 发布向量：PublishVectors 须覆盖当前内容版本全部切片，同事务替换＋审计；新内容版本经切片级联清除旧向量。ACL/健康变化不重算向量。
+- 授权检索：Search 与 Read 共享 visibleChunk 谓词，排序前过滤并叠加 RLS；候选仅含 Reference＋距离，取证必须重走 Read。变异去掉谓词后同步身份用例失败，普通读者仍由 RLS 拦截。
+- 入口：/api/ops/knowledge/vectors 与 /search，沿用认证与错误码。
+- 本机验证：WSL `17/agentos-m3`（55440，需 `pg_ctlcluster --skip-systemctl-redirect` 启动）上 pnpm test:db 与 pnpm check 均退出 0（m3-vector-full-db.log、m3-vector-check.log）；git diff --check 通过；测试库/角色残留 0。
+- 远端证据：fc2d6c6 [CI 39237901826](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39237901826) success（schema 16）；b211575 [CI 39266475769](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39266475769) success，含 pgvector 镜像与驱动探针。schema 17 提交待自身 CI。
+- 限定范围：无 Embedding 调用、ANN、全文融合、中文召回评测、原生来源同步/游标恢复、组织权限解析及模型/交付消费者；不宣称完成 RAG。
 ## 固定 M2 证据
 
 - 复验审批：2026-10-19，当前 fc2d6c6/schema 16 已具备本次要求，无重复实现。真实 PG 执行 `go test -tags=integration -count=1 -run 'TestApproval' -v ./internal/feishu` 及 `-run 'TestCardApprovalDatabaseBoundary|TestQuoteApprovalCardAmendRestartDelivery'` 均通过；覆盖版本/摘要绑定、并发重复回调、撤权（含锁等待）、挂起原子性、重启与租约恢复、改单重新审批和单次交付。日志 .tools/m2-approval-current-db.log、m2-approval-current-card-db.log；仅合成替身，无外部发送。此项为当前提交定向复验，不替代全量 CI/race。
@@ -34,13 +33,12 @@
 
 ## 接续 M3 下一切片
 
-1. 核对当前提交远端 CI，不借上一 schema 15 制品通过结论；失败按证据修复。
-2. 推进授权候选检索与引用消费者：按 A05 核实本机/CI 的 pgvector 能力，建立当前内容/ACL/健康世代下的数据库授权检索，禁用未经认证组合；不以应用内过滤替代出库前授权。
-3. 补齐候选标题/正文/计数隔离、版本失配、检索后撤权和交付复核真实 PG 测试；原生来源权限同步与游标恢复继续保留为待完成项，不把人工 HTTP 输入称为自动连接器。
-
+1. 核对 schema 17 提交远端 CI；失败按证据修复，不借 b211575 结论。
+2. 接引用消费者：模型上下文组装与交付前对候选逐条 Read 重验，群聊接收范围未确认不输出正文；不缓存正文作授权。
+3. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。原生来源权限同步与游标恢复仍待完成。
 ## 保留交付环境
 
 - 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
-- 当前 M3 制品使用 schema 16；00001—00015 保持不变。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+- 当前 M3 制品使用 schema 17；00001—00016 保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。

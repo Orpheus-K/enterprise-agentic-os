@@ -5,7 +5,15 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 基础任务租约（2026-10-20）
+## 当前切片：SQLite 业务能力授权（2026-10-20）
+
+- 实现：R02/R15、A03/A08、V06/V13；SQLite schema 4 增加审计、状态、任务核对与审批四种应用级能力；两个驱动提供 RequireCapabilityIn，在领域事务内解析当前映射并检查能力，失败无 Principal。统一 ErrForbidden，PG 旧名称保留同一错误身份供现有调用方使用。
+- 接线：PG Operation 改为同事务解析映射、能力检查和领域回调；审批/核对在业务行锁后的复核保持。SQLite 不提供隐式 RLS 或无范围 SQL 回调，仍无运行入口。规范见 [身份](../contracts/identity.md) 与 [运维](../contracts/operations.md)。
+- 证据：`pnpm check`、全量 `pnpm test:db` 退出 0（`.tools/m3-sqlite-capabilities-check.log`、`m3-sqlite-capabilities-db.log`），测试库/角色残留 0、集群停止。提交前发现 sqlitedb/database.go 被改回 schema 1 且移除写锁；用户确认非有意改动，已恢复 schema 4 与 _txlock=immediate。恢复后 SQLite 数据库/身份/任务全包通过（`m3-sqlite-capabilities-restored-final.log`），包含双连接事务在读取前取得写锁及回滚释放锁回归。阻塞解除；停止代码编辑后的 `pnpm check` 退出 0（`m3-sqlite-capabilities-restored-check-final.log`）。前一次重验与新增测试导入并发，编译报 time 导入文件缺失，日志保留于 restored-check.log，未计为通过。
+- 下一片：SQLite 审批挂起、查看与决定，复用本片事务内授权；绑定版本/摘要/期限并覆盖重启、并发回调及撤权。人工核对、查询与运行入口随后按依赖推进。
+- 远端补证：f59d93c CI 39411112694/39411073583、35553ed CI 39411716145/39411708455 已 success；5b8e55e CI 39412485835/39412477837 也已 success。
+
+## 保留切片：SQLite 基础任务租约（2026-10-20）
 
 - 实现：R03/R06、A03/A04/A08、V03/V05/V06；SQLite schema 3 保留旧 pending 任务与审计，增加认领、当前身份复核、续租、基础文本状态推进及未知意图恢复扫描；复用共同状态转换判定。事务写锁后使用数据库时间，步骤审计原子且唯一；没有 Worker/配置入口。单点边界见 [任务契约](../contracts/task-runtime.md#sqlite-基础文本任务租约)。
 - 反例：首轮共享测试暴露版本起点差异（PG 初始版本 1、首次认领 2，SQLite 曾从 0 开始），已按 PG 修正。双驱动契约覆盖并发/范围、旧世代/旧版本、检查点复用与撤权、未知结果不重放、状态/恢复审计回滚；另覆盖成功终态与 schema 2→3 原数据保留。

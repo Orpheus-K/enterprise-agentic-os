@@ -13,6 +13,26 @@ type Repository struct{ db *sql.DB }
 
 func New(db *sql.DB) *Repository { return &Repository{db: db} }
 
+// RequireCapabilityIn must be called after acquiring the domain's write
+// transaction. It does not authorize subsequent unscoped SQL or another request.
+func (r *Repository) RequireCapabilityIn(ctx context.Context, tx *sql.Tx, external identity.ExternalIdentity, app, capability string) (identity.Principal, error) {
+	p, err := r.ResolveIn(ctx, tx, external)
+	if err != nil {
+		return identity.Principal{}, err
+	}
+	var allowed bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM iam_operation_grants
+WHERE tenant_id=? AND member_id=? AND app_id=? AND capability=? AND enabled=1)`,
+		p.TenantID.String(), p.MemberID.String(), app, capability).Scan(&allowed)
+	if err != nil {
+		return identity.Principal{}, err
+	}
+	if !allowed {
+		return identity.Principal{}, identity.ErrForbidden
+	}
+	return p, nil
+}
+
 // Resolve checks the complete mapping and active membership in one snapshot.
 // It grants no business capability; each domain transaction must reauthorize.
 func (r *Repository) Resolve(ctx context.Context, external identity.ExternalIdentity) (identity.Principal, error) {

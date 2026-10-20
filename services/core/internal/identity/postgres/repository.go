@@ -11,7 +11,25 @@ import (
 
 type Repository struct{ db *database.DB }
 
-var ErrForbidden = errors.New("operation capability denied")
+// ErrForbidden retains the existing PostgreSQL callers' error identity.
+var ErrForbidden = identity.ErrForbidden
+
+// RequireCapabilityIn resolves the current external mapping and checks its
+// application capability in the caller's transaction.
+func (r *Repository) RequireCapabilityIn(ctx context.Context, q database.Queries, external identity.ExternalIdentity, app, capability string) (identity.Principal, error) {
+	p, err := r.ResolveIn(ctx, q, external)
+	if err != nil {
+		return identity.Principal{}, err
+	}
+	var allowed bool
+	if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM iam.operation_grants WHERE tenant_id=$1 AND member_id=$2 AND app_id=$3 AND capability=$4 AND enabled)`, p.TenantID, p.MemberID, app, capability).Scan(&allowed); err != nil {
+		return identity.Principal{}, err
+	}
+	if !allowed {
+		return identity.Principal{}, identity.ErrForbidden
+	}
+	return p, nil
+}
 
 // WithCapability checks the current member and explicit application grant in the query transaction.
 func (r *Repository) WithCapability(ctx context.Context, p identity.Principal, app, capability string, fn func(database.Queries) error) error {

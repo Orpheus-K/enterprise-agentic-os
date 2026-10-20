@@ -19,4 +19,5 @@
 - `identity/sqlite.Repository.Resolve` 与 PostgreSQL 使用同一行为测试：完整键精确匹配、同成员 ID 跨租户、停用、撤链、改绑与取消；单条连接查询同时检查链接、成员和租户，失败返回零值 Principal。
 - `sqlitedb` 使用固定版本 modernc SQLite 与 Goose 独立迁移序列（版本以代码 SchemaVersion 为准）；只接受绝对文件路径，运行打开不创建文件或自动迁移。迁移须停应用后显式调用；所有连接启用外键，等待锁上限 5 秒。写事务先用 BEGIN IMMEDIATE 取得写锁，再读取身份；ResolveIn 不设置任何隐式授权上下文。
 - SQLite 无 PostgreSQL 账户权限/RLS。数据库文件及连接属于可信进程；后续业务仓储必须在自有事务中显式限定租户并重验授权，不提供假定有 RLS 的原始 SQL 回调。
+- 两个驱动的 `RequireCapabilityIn` 在调用方事务内重新解析 ExternalIdentity，再精确检查租户、成员、应用和能力；失败不返回 Principal。身份不可用返回 ErrUnauthenticated，身份有效但无当前授权返回共享 ErrForbidden，数据库故障保持独立错误。SQLite schema 4 仅支持 audit.read、status.read、task.reconcile、task.approve，不迁入知识能力；授权表不向请求暴露写接口。
 - 本片仅提供库与真实文件测试，未开放配置或运行入口；任务、审批、审计及启动能力检查完成前不声称轻量部署可用。首版范围与知识/向量禁用要求以 [A03 的 M3 分片范围](../enterprise-agentic-os-architecture/07-架构决策与研发路线.md) 为准。

@@ -157,3 +157,6 @@
 - 近期远端：来源贯通 c04faec CI 39406978346/39406973183、备份 c44a543 CI 39407631878/39407623734 均 success。WASM 库层 4e21509 的 CI 尚未确认。
 - 下一片：核对 M3 剩余计算输出限额、隔离负例与部署材料；容器 Python、CPU 指令计量及文件产物扫描仍未实现，SQLite 范围仍待决策。
 - 证据：`pnpm check:go` 通过（`.tools/m3-wasm-rule-final.log`）。big.Int 差分覆盖边界/最大金额及 100 个固定随机样本；初版 i32 结果在 raw uint64 带高位导致拒绝，模块出口显式零扩展为 i64 后通过，保留边界测试。无数据库变更，未运行 test:db；远端 CI 待确认。下一步为显式启用与运行版本绑定。
+
+- WASM 输出边界补片：旧 Run 实际接受 9 个结果，负例复现于 `.tools/m3-wasm-output-before.log`。现于实例化前验证 i32/i64 签名，参数/结果各限 8；i32 超宽输入拒绝、输出零扩展，不放开文件或引用读取。含死循环启动段的非法签名先拒绝，避免执行后才发现超限。
+- 输出证据：`pnpm check:go` 通过（`.tools/m3-wasm-output-check.log`）；补启动段反例后沙箱与报价全部单元测试通过（`m3-wasm-output-final.log`），夹具另经独立 CompileModule 验证有效。无数据库变化，未重跑 test:db；远端待确认。仍未实现 CPU 指令计量、容器 Python 与文件扫描。

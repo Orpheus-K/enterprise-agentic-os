@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/tetratelabs/wazero"
 )
 
 // Modules are assembled by hand so the tests need no compiler and the bytes stay reviewable.
@@ -119,5 +121,77 @@ func TestRunCapsMemoryGrowth(t *testing.T) {
 	got, err := Run(t.Context(), pin(growModule(1)), limits, "grow")
 	if err != nil || len(got) != 1 || uint32(got[0]) != 0xffffffff {
 		t.Fatal("growth beyond limit allowed", got, err)
+	}
+}
+
+// Small single-function fixtures keep signature tests independent of a compiler.
+func signatureModule(params, results, instructions []byte) []byte {
+	section := func(id byte, body []byte) []byte { return append([]byte{id, byte(len(body))}, body...) }
+	typ := append([]byte{1, 0x60, byte(len(params))}, params...)
+	typ = append(typ, byte(len(results)))
+	typ = append(typ, results...)
+	body := append([]byte{0}, instructions...)
+	body = append(body, 0x0b)
+	return join(header, section(1, typ), []byte{3, 2, 1, 0},
+		[]byte{7, 7, 1, 3, 'r', 'u', 'n', 0, 0},
+		section(10, append([]byte{1, byte(len(body))}, body...)))
+}
+
+func TestRunEnforcesIntegerOutputContract(t *testing.T) {
+	for _, count := range []int{8, 9} {
+		var results, code []byte
+		for range count {
+			results = append(results, 0x7e) // i64
+			code = append(code, 0x42, 1)    // i64.const 1
+		}
+		got, err := Run(t.Context(), pin(signatureModule(nil, results, code)), limits, "run")
+		if count == 8 {
+			if err != nil || len(got) != count {
+				t.Fatal("valid maximum rejected", got, err)
+			}
+		} else if !errors.Is(err, ErrInvalid) || got != nil {
+			t.Fatal("oversized result signature accepted", got, err)
+		}
+	}
+	for _, tc := range []struct {
+		module []byte
+		args   []uint64
+	}{
+		{signatureModule([]byte{0x7d}, nil, nil), []uint64{0}},
+		{signatureModule(nil, []byte{0x7d}, []byte{0x43, 0, 0, 0, 0}), nil},
+	} {
+		got, err := Run(t.Context(), pin(tc.module), limits, "run", tc.args...)
+		if !errors.Is(err, ErrInvalid) || got != nil {
+			t.Fatal("floating point signature accepted", got, err)
+		}
+	}
+	if got, err := Run(t.Context(), pin(addModule), limits, "add", 1<<32, 1); !errors.Is(err, ErrInvalid) || got != nil {
+		t.Fatal("i32 input silently truncated", got, err)
+	}
+	compare := signatureModule([]byte{0x7e, 0x7e}, []byte{0x7f}, []byte{0x20, 0, 0x20, 1, 0x54})
+	got, err := Run(t.Context(), pin(compare), limits, "run", 9_000_000_000_000_000, 9_000_000_000_000_001)
+	if err != nil || len(got) != 1 || got[0] != 1 {
+		t.Fatal("i32 result not normalized", got, err)
+	}
+}
+
+func TestInvalidSignatureRejectedBeforeStartSection(t *testing.T) {
+	// run returns f32; a separate WASM start function loops forever. The
+	// signature rejection must happen before the start section executes.
+	module := join(header,
+		[]byte{1, 8, 2, 0x60, 0, 1, 0x7d, 0x60, 0, 0},
+		[]byte{3, 3, 2, 0, 1},
+		[]byte{7, 7, 1, 3, 'r', 'u', 'n', 0, 0},
+		[]byte{8, 1, 1},
+		[]byte{10, 17, 2, 7, 0, 0x43, 0, 0, 0, 0, 0x0b,
+			7, 0, 0x03, 0x40, 0x0c, 0, 0x0b, 0x0b})
+	runtime := wazero.NewRuntime(t.Context())
+	defer func() { _ = runtime.Close(context.Background()) }()
+	if _, err := runtime.CompileModule(t.Context(), module); err != nil {
+		t.Fatal("malformed start-section fixture", err)
+	}
+	got, err := Run(t.Context(), pin(module), Limits{Timeout: 100 * time.Millisecond, MemoryPages: 1}, "run")
+	if !errors.Is(err, ErrInvalid) || got != nil {
+		t.Fatal("invalid signature ran start section", got, err)
 	}
 }

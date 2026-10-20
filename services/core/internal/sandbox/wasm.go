@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
 )
 
 var (
@@ -61,7 +62,9 @@ func (p Program) validate() error {
 	return nil
 }
 
-// Run calls one exported function and returns its raw results. A new runtime is created and
+// Run calls one integer-only export with at most eight arguments and results.
+// i32 values use their low 32-bit representation, with upper bits zero.
+// A new runtime is created and
 // closed for every call, so memory, globals and compiled state never leak between tasks.
 func Run(ctx context.Context, program Program, limits Limits, export string, args ...uint64) ([]uint64, error) {
 	if err := limits.validate(); err != nil {
@@ -82,6 +85,27 @@ func Run(ctx context.Context, program Program, limits Limits, export string, arg
 	if err != nil {
 		return nil, stopped(ctx, fmt.Errorf("%w: compile: %v", ErrInvalid, err))
 	}
+	definition := compiled.ExportedFunctions()[export]
+	if definition == nil {
+		return nil, fmt.Errorf("%w: unknown export", ErrInvalid)
+	}
+	params, outputs := definition.ParamTypes(), definition.ResultTypes()
+	if len(params) != len(args) || len(outputs) > maxValues {
+		return nil, fmt.Errorf("%w: signature size", ErrInvalid)
+	}
+	for i, typ := range params {
+		if (typ != api.ValueTypeI32 && typ != api.ValueTypeI64) ||
+			(typ == api.ValueTypeI32 && args[i] > uint64(^uint32(0))) {
+			return nil, fmt.Errorf("%w: integer argument", ErrInvalid)
+		}
+	}
+	for _, typ := range outputs {
+		if typ != api.ValueTypeI32 && typ != api.ValueTypeI64 {
+			return nil, fmt.Errorf("%w: integer result", ErrInvalid)
+		}
+	}
+	// Reject unsupported signatures before instantiation can run a WASM start
+	// section. No caller can opt out of the bounded integer ABI.
 	// Imports stay unresolved on purpose: a module asking for a host capability fails here.
 	module, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithStartFunctions())
 	if err != nil {
@@ -91,12 +115,17 @@ func Run(ctx context.Context, program Program, limits Limits, export string, arg
 	if function == nil {
 		return nil, fmt.Errorf("%w: unknown export", ErrInvalid)
 	}
-	if len(function.Definition().ParamTypes()) != len(args) {
-		return nil, fmt.Errorf("%w: argument count", ErrInvalid)
-	}
 	results, err := function.Call(ctx, args...)
 	if err != nil {
 		return nil, stopped(ctx, fmt.Errorf("%w: %v", ErrFailed, err))
+	}
+	if len(results) != len(outputs) {
+		return nil, ErrFailed
+	}
+	for i, typ := range outputs {
+		if typ == api.ValueTypeI32 {
+			results[i] = uint64(uint32(results[i]))
+		}
 	}
 	return results, nil
 }

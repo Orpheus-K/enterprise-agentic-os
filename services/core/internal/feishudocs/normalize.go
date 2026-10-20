@@ -45,6 +45,7 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 		Children []string `json:"children"`
 		Type     int      `json:"block_type"`
 		body     string
+		sequence string
 	}
 	nodes := map[string]node{}
 	root := ""
@@ -62,6 +63,12 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 			key = "text"
 		case n.Type >= 3 && n.Type <= 11:
 			key = "heading" + strconv.Itoa(n.Type-2)
+		case n.Type == 12:
+			key = "bullet"
+		case n.Type == 13:
+			key = "ordered"
+		case n.Type == 17:
+			key = "todo"
 		default:
 			return fail, ErrUnsupported
 		}
@@ -81,6 +88,44 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 			return fail, err
 		}
 		n.body = strings.TrimSpace(body)
+		if n.Type == 12 || n.Type == 13 || n.Type == 17 {
+			if n.body == "" {
+				return fail, ErrUnsupported
+			}
+			var payload struct {
+				Style *struct {
+					Done     *bool   `json:"done"`
+					Sequence *string `json:"sequence"`
+				} `json:"style"`
+			}
+			if json.Unmarshal(fields[key], &payload) != nil {
+				return fail, ErrInvalid
+			}
+			switch n.Type {
+			case 12:
+				n.body = "• " + n.body
+			case 13:
+				if payload.Style == nil || payload.Style.Sequence == nil {
+					return fail, ErrUnsupported
+				}
+				n.sequence = *payload.Style.Sequence
+				if n.sequence != "auto" {
+					number, err := strconv.Atoi(n.sequence)
+					if err != nil || number < 1 || number > 1000000000 || strconv.Itoa(number) != n.sequence {
+						return fail, ErrInvalid
+					}
+				}
+			case 17:
+				if payload.Style == nil || payload.Style.Done == nil {
+					return fail, ErrUnsupported
+				}
+				if *payload.Style.Done {
+					n.body = "[已完成] " + n.body
+				} else {
+					n.body = "[未完成] " + n.body
+				}
+			}
+		}
 		if len(n.body) > 16000 {
 			return fail, ErrLimit
 		}
@@ -89,24 +134,56 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 		}
 		nodes[n.ID] = n
 	}
+	// Resolve ordered numbering only from an explicit start and consecutive
+	// ordered siblings. Missing historical sequence data is not guessed.
+	for _, parent := range nodes {
+		previous := 0
+		for _, id := range parent.Children {
+			n := nodes[id]
+			if n.Type != 13 {
+				previous = 0
+				continue
+			}
+			if n.sequence == "auto" {
+				if previous == 0 || previous == 1000000000 {
+					return fail, ErrUnsupported
+				}
+				previous++
+			} else {
+				previous, _ = strconv.Atoi(n.sequence) // validated above
+			}
+			n.body = strconv.Itoa(previous) + ". " + n.body
+			nodes[id] = n
+		}
+	}
 	out := knowledge.Content{SourceID: source, DocumentID: snapshot.DocumentID,
 		Revision: int64(snapshot.Revision), Title: snapshot.Title}
 	// API pagination order is not document order. Traverse declared children
 	// iteratively, preserving source order and avoiding attacker-controlled depth.
-	stack := []string{root}
+	type pending struct{ id, context string }
+	stack := []pending{{id: root}}
 	for len(stack) > 0 {
-		id := stack[len(stack)-1]
+		item := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		id := item.id
 		n := nodes[id]
 		if n.body != "" {
+			body := item.context + n.body
+			if len(body) > 16000 {
+				return fail, ErrLimit
+			}
 			if len(out.Chunks) == 256 {
 				return fail, ErrLimit
 			}
-			out.Chunks = append(out.Chunks, knowledge.Chunk{ID: id, Body: n.body,
+			out.Chunks = append(out.Chunks, knowledge.Chunk{ID: id, Body: body,
 				Anchor: "feishu-docx:" + snapshot.DocumentID + ":" + strconv.Itoa(snapshot.Revision) + ":" + id})
 		}
+		prefix := item.context
+		if n.Type == 12 || n.Type == 13 || n.Type == 17 {
+			prefix += n.body + "\n"
+		}
 		for i := len(n.Children) - 1; i >= 0; i-- {
-			stack = append(stack, n.Children[i])
+			stack = append(stack, pending{id: n.Children[i], context: prefix})
 		}
 	}
 	if len(out.Chunks) == 0 {

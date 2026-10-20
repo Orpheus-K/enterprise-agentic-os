@@ -4,6 +4,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"agentos.local/core/internal/database"
+	"agentos.local/core/internal/feishudocs"
 	"agentos.local/core/internal/testpg"
 	"github.com/google/uuid"
 )
@@ -78,5 +80,22 @@ func TestOpenSourcesValidatesWithoutScheduling(t *testing.T) {
 	if channel, err := Open(t.Context(), path, logger); err == nil {
 		channel.Close()
 		t.Fatal("disabled source accepted")
+	}
+	exec("UPDATE knowledge.sources SET enabled=true")
+	c.OAuth = &OAuthConfig{ActiveKeyID: "v1", KeyEnvs: map[string]string{"v1": "SOURCE_OAUTH_KEY"}}
+	c.Sources[0].Owner = SourceUser{OpenID: "ou_sync", UseOAuth: true}
+	t.Setenv("SOURCE_OAUTH_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	raw, err = json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if channel, err := Open(t.Context(), path, logger); !errors.Is(err, feishudocs.ErrOAuthMissing) {
+		if channel != nil {
+			channel.Close()
+		}
+		t.Fatal("missing OAuth authorization did not fail startup", err)
 	}
 }

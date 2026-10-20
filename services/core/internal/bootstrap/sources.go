@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"regexp"
 	"time"
@@ -17,6 +18,12 @@ import (
 type SourceUser struct {
 	OpenID         string `json:"open_id"`
 	AccessTokenEnv string `json:"access_token_env"`
+	UseOAuth       bool   `json:"use_oauth,omitempty"`
+}
+
+type OAuthConfig struct {
+	ActiveKeyID string            `json:"active_key_id"`
+	KeyEnvs     map[string]string `json:"key_envs"`
 }
 
 type SourceConfig struct {
@@ -32,6 +39,16 @@ var sourceIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
 var secretReference = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 func (c Config) validateSources() error {
+	if c.OAuth != nil {
+		if len(c.Sources) == 0 || !sourceIdentifier.MatchString(c.OAuth.ActiveKeyID) || len(c.OAuth.KeyEnvs) == 0 || len(c.OAuth.KeyEnvs) > 16 || c.OAuth.KeyEnvs[c.OAuth.ActiveKeyID] == "" {
+			return errors.New("invalid source OAuth key references")
+		}
+		for id, env := range c.OAuth.KeyEnvs {
+			if !sourceIdentifier.MatchString(id) || !secretReference.MatchString(env) {
+				return errors.New("invalid source OAuth key reference")
+			}
+		}
+	}
 	if len(c.Sources) == 0 {
 		return nil
 	}
@@ -62,7 +79,10 @@ func (c Config) validateSources() error {
 			users[user.OpenID] = true
 		}
 		for _, user := range append([]SourceUser{source.Owner}, source.Recipients...) {
-			if !secretReference.MatchString(user.AccessTokenEnv) {
+			if user.UseOAuth && (c.OAuth == nil || user.AccessTokenEnv != "") {
+				return errors.New("OAuth source requires key configuration and forbids static token")
+			}
+			if !user.UseOAuth && !secretReference.MatchString(user.AccessTokenEnv) {
 				return errors.New("source credential environment reference required")
 			}
 			if _, err := feishudocs.NewCredential(feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, "validation-only"); err != nil {
@@ -78,19 +98,48 @@ type preparedSource struct {
 	owner      feishudocs.Credential
 	recipients []feishudocs.Credential
 	key        string
+	oauthKeys  *feishudocs.OAuthKeys
 }
 
 func (c Config) sourceCredentials() ([]preparedSource, error) {
 	var out []preparedSource
+	var keys *feishudocs.OAuthKeys
+	if c.OAuth != nil {
+		material := map[string][]byte{}
+		defer func() {
+			for _, key := range material {
+				clear(key)
+			}
+		}()
+		for id, env := range c.OAuth.KeyEnvs {
+			encoded, err := secret(env)
+			if err != nil {
+				return nil, err
+			}
+			key, err := base64.StdEncoding.Strict().DecodeString(encoded)
+			if err != nil || len(key) != 32 {
+				return nil, errors.New("OAuth key must be base64-encoded 32 bytes")
+			}
+			material[id] = key
+		}
+		var err error
+		keys, err = feishudocs.NewOAuthKeys(c.OAuth.ActiveKeyID, material)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, config := range c.Sources {
 		credential := func(user SourceUser) (feishudocs.Credential, error) {
+			if user.UseOAuth {
+				return feishudocs.Credential{}, nil
+			} // Bound to the database in openSources.
 			token, err := secret(user.AccessTokenEnv)
 			if err != nil {
 				return feishudocs.Credential{}, err
 			}
 			return feishudocs.NewCredential(feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, token)
 		}
-		source := preparedSource{config: config}
+		source := preparedSource{config: config, oauthKeys: keys}
 		var err error
 		source.owner, err = credential(config.Owner)
 		if err != nil {
@@ -121,9 +170,33 @@ type sourceRunner struct {
 	config SourceConfig
 }
 
-func (c Config) openSources(ctx context.Context, db *database.DB, prepared []preparedSource) ([]sourceRunner, error) {
+func (c Config) openSources(ctx context.Context, db *database.DB, prepared []preparedSource, appSecret string) ([]sourceRunner, error) {
 	var out []sourceRunner
 	for _, source := range prepared {
+		credential := func(user SourceUser, static feishudocs.Credential) (feishudocs.Credential, error) {
+			if !user.UseOAuth {
+				return static, nil
+			}
+			oauth, err := feishudocs.NewOAuth(db, c.Binding.TenantID, feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, appSecret, source.oauthKeys)
+			if err != nil {
+				return feishudocs.Credential{}, err
+			}
+			if err = oauth.CheckReady(ctx); err != nil {
+				return feishudocs.Credential{}, err
+			}
+			return oauth.Credential(), nil
+		}
+		var err error
+		source.owner, err = credential(source.config.Owner, source.owner)
+		if err != nil {
+			return nil, err
+		}
+		for i, user := range source.config.Recipients {
+			source.recipients[i], err = credential(user, source.recipients[i])
+			if err != nil {
+				return nil, err
+			}
+		}
 		store, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
 		if err != nil {
 			return nil, err

@@ -25,17 +25,27 @@ Read 先验身份和权限，再取文档元数据，将所有分页固定到初
 
 错误仅暴露分类，不包含 token、原文或供应商错误正文；SDK 日志关闭。输入无效、身份/权限拒绝、版本变化、快照超限分别失败，HTTP/协议/凭证过期等不可确定状态归为来源不可用。来源不可用不能解释为删除或全员撤权。凭证默认 JSON 与格式化输出不包含密钥。
 
-尚未完成：OAuth 生命周期持久化与读取接线、完整块类型支持、原生事件游标、事件订阅与主动撤回，以及真实租户联调。OAuth 当前仅完成下述私有传输层；合成 HTTP 测试不证明完整生命周期或飞书线上权限配置；IAM 映射另用真实 PostgreSQL 的当前成员/链接撤销及改绑测试验证。
+尚未完成：OAuth 受控管理入口及未知结果人工核对入口、完整块类型支持、原生事件游标、事件订阅与主动撤回，以及真实租户联调。OAuth 生命周期库和来源读取已接线；合成 HTTP 与 PG 测试不证明线上权限配置或真实租户联调通过。
 
 ## OAuth v3 传输契约
 
-2026-10-21 核对飞书官方当前文档：换取与刷新使用 `https://accounts.feishu.cn/oauth/v3/token`，表单提交 confidential client 的 client_id/client_secret；授权码换取带 HTTPS redirect_uri 和 PKCE code_verifier。v1/v2 token 接口已列为历史版本。本层不创建回调路由、不接收浏览器授权，也未实现 state/PKCE 会话持久化。[获取 Token 官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/get-user-access-token-v3)。
+2026-10-21 核对飞书官方当前文档：换取与刷新使用 `https://accounts.feishu.cn/oauth/v3/token`，表单提交 confidential client 的 client_id/client_secret；授权码换取带 HTTPS redirect_uri 和 PKCE code_verifier。v1/v2 token 接口已列为历史版本。本层不注册公开回调路由；OAuth.Begin 持久保存 state 摘要、PKCE verifier 和五分钟会话后返回授权 URL。[获取 Token 官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/get-user-access-token-v3)。
 
-有效期采用响应实际秒数，自请求开始计时；明确校验成功 code、Bearer、Token 格式和实际 scope，不将申请 scope 当已授予 scope。允许授权范围缩小；未获 offline_access 时不假设存在刷新凭证。刷新凭证单次使用，成功返回新凭证后旧凭证失效；未知结果不得重放。传输层没有自动重试，持久刷新意图和并发领取仍待实现。[刷新官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/refresh-user-access-token-v3)。
+有效期采用响应实际秒数，自请求开始计时；明确校验成功 code、Bearer、Token 格式和实际 scope，不将申请 scope 当已授予 scope。允许授权范围缩小；未获 offline_access 时不假设存在刷新凭证。刷新凭证单次使用，成功返回新凭证后旧凭证失效；未知结果不得重放。传输层没有自动重试；换取/刷新先提交意图，并发竞争者通过 CAS 拒绝。[刷新官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/refresh-user-access-token-v3)。
 
-撤销调用 `https://accounts.feishu.cn/oauth/v1/revoke`，成功为 HTTP 200 空响应；已失效 Token 也可返回成功。access_token 与 refresh_token 分别撤销，不能推断撤销刷新凭证会关闭所有历史 access_token。本地先拒绝后远端撤销及失败恢复仍待接线。[撤销官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/login-state-management/revoke-token)。
+撤销调用 `https://accounts.feishu.cn/oauth/v1/revoke`，成功为 HTTP 200 空响应；已失效 Token 也可返回成功。access_token 与 refresh_token 分别撤销，不能推断撤销刷新凭证会关闭所有历史 access_token。本地先保存 revoking 阻断读取，再分别撤销；远端失败保留凭证供安全重试，不报告撤销成功。[撤销官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/login-state-management/revoke-token)。
 
-所有生产地址固定、拒绝重定向，单请求 15 秒、响应最多 64 KiB。错误区分输入无效、过期、撤销、明确拒绝与结果未知；仅暴露 HTTP/业务码，不返回供应商正文、请求 URL 或凭证。合成测试覆盖表单协议、范围缩小/扩张、有效期、超限/畸形响应、取消、重定向及脱敏。生命周期状态机、身份绑定验证、刷新防重放和 Syncer 消费者接线完成前，启动配置仍使用原有静态环境引用，不宣称 OAuth 流程可用。
+所有生产地址固定、拒绝重定向，单请求 15 秒、响应最多 64 KiB。错误区分输入无效、过期、撤销、明确拒绝与结果未知；仅暴露 HTTP/业务码，不返回供应商正文、请求 URL 或凭证。合成测试覆盖表单协议、范围缩小/扩张、有效期、超限/畸形响应、取消、重定向及脱敏。显式 use_oauth 来源使用账本引用；未授权、缺钥或未知状态拒绝启动，不回退到静态 Token。
+
+### 生命周期与读取
+
+Begin 将随机 state 的摘要、PKCE S256 verifier、批准的 scope 和 HTTPS 回调地址加密保存；Complete 恒定时间核对 state，过期拒绝，持久标记 exchanging 后才调用 Token 端点。[官方授权参数](https://open.feishu.cn/document/authentication-management/access-token/obtain-oauth-code)。调用方必须从可信安装和已认证用户绑定构造 OAuth，不能以回调参数选择租户或员工；库不注册匿名管理接口。
+
+换取/刷新成功后先以 verifying 保存新凭证，再通过 user_info 校验绑定用户和租户，最后进入 active；失败不释放 Token。访问凭证过期时才领取一次刷新意图；刷新凭证已过期则明确要求重新授权。外部结果未知或成功后保存失败时保留非 active 状态，不重放授权码/刷新凭证。并发调用只能有一个 CAS 胜者；检查失败不能改用应用凭证。
+
+Credential 是账本引用。Reader 每次开始读取时解析当前凭证，结束前再查同一代仍为 active 且未过期；读取期间撤销或轮换则丢弃结果。CheckReady 仅查本地授权状态，不触发 HTTP；过期 access 但 refresh 仍有效可启动，后续读取再刷新。Syncer 与原有 IAM/内容 ACL 检查保持独立。
+
+Revoke 先持久阻断，再撤销当前 refresh 与 access；成功后清除秘密并保留 revoked 及审计。对 exchanging/refreshing 的未知结果，可能存在未保存的新 Token；即使已知凭证撤销成功，也保留 RemoteUnknown 并明确返回未知，不允许重新授权覆盖。这种情况需供应商侧核对，人工入口仍待实现。只做合成服务验证，不接真实租户。
 
 ### 加密账本基础
 
@@ -43,7 +53,7 @@ PG schema 23 增加 channel.oauth_credentials 与独立追加审计。记录按�
 
 OAuthKeys 仅接受外部提供的 32 字节 AES-256 密钥和不可变 key ID；配置/数据库应保存引用，密钥材料需由部署侧安全生成和注入，不由账本导出。密文使用 GCM 随机 nonce，并认证格式域、格式版本、key ID、内部租户、应用、飞书租户、用户及账本版本。缺钥、篡改、跨绑定替换均无明文输出；明文上限 64 KiB。保留旧钥可读历史记录，新写使用当前钥，旧钥只能在全部记录迁移及备份保留期处理后退役。加密并不阻止整库回滚；恢复仍须独立核对外部撤权事实和密钥版本。
 
-本片仅实现加密封装和 PG CAS 账本，不把它视为完整刷新防重放或 OAuth 可用性证明。下一片须在换取/刷新前持久保存外部意图，成功后原子替换凭证；未知结果拒绝再调用，并由来源读取实际消费。
+OAuth.Begin/Complete/CheckReady/Credential/Revoke 已消费账本。生产授权管理命令和未知结果人工核对入口尚未实现，不能要求操作员直接修改密文或清表解锁。
 
 ## 单次同步执行
 

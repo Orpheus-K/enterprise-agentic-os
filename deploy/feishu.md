@@ -102,7 +102,9 @@
 }
 ```
 
-Token 必须是各绑定用户自己的 user access token；目前不自动获取/刷新，过期使来源不可用，需要轮换环境变量并重启。候选收件人不是授权名单，执行器逐个验证原生有效权限。配置变更先停旧实例；未知调用须经受控核对，不能通过改配置或清表绕过。轮询与证明有效期、类型限制及失败语义以 [来源契约](../contracts/feishu-docs.md) 为准。
+静态 Token 必须是各绑定用户自己的 user access token；静态模式不自动刷新，过期使来源不可用，需要轮换环境变量并重启。候选收件人不是授权名单，执行器逐个验证原生有效权限。配置变更先停旧实例；未知调用须经受控核对，不能通过改配置或清表绕过。轮询与证明有效期、类型限制及失败语义以 [来源契约](../contracts/feishu-docs.md) 为准。
+
+OAuth 来源可将单个 owner/recipient 改为 `{"open_id":"ou_sync","use_oauth":true}`，删除该用户的 access_token_env，并在顶层配置 `"oauth":{"active_key_id":"v1","key_envs":{"v1":"FEISHU_OAUTH_KEY_V1"}}`。环境引用值为安全生成的 32 字节密钥的标准 Base64；应用密钥仍来自 app_secret_env。每个 key ID 必须固定对应同一密钥材料，轮换新增 ID 并保留旧钥用于历史密文和备份。缺钥、未完成授权、未知状态或完全过期时启动失败；SQLite 不支持该来源配置。当前生命周期库与来源消费已测试，受控授权管理命令尚待实现，不通过手工造密文或清表配置授权。
 
 同步任务查询：向 `/api/ops/knowledge/sync/inspect` POST `{"source_id":"配置中的来源 UUID","document_id":"配置中的原生文档 ID"}`，使用既有运维 Bearer。运维绑定成员须具有该来源同步权限及 `knowledge.reconcile` 授权。读取返回的 request_revision、generation、config_hash 与输入摘要，结合供应商证据再调用核对入口；pending 或租约过期本身不能作为 not_sent 的证据。接口契约见[同步任务查询](../contracts/knowledge.md#同步任务查询)。
 

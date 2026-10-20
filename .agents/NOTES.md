@@ -12,7 +12,8 @@
 - 第 14 项：官方渠道能力矩阵已写入 contracts/channel-capabilities.md；企微原始开发页抓取失败的精确 API 能力明确待核实，基础接入使用腾讯官方指南交叉证明。未写渠道代码、未做真实租户验收。
 - 第 6 项：RunArtifact 复用 WASM 隔离约束，限制文本/JSON、最大 1 MiB，验证指针/长度、UTF-8、JSON 解码后内容并强制现场扫描器；失败/取消不返回产物。仅库层，无文件/WASI、无业务交付接线，不宣称完整杀毒。wazero v1.12.0 公开 API 未提供可直接配置的指令预算，函数 listener 的死循环反例仅通知一次，明确不支持指令计量。单点 contracts/sandbox.md；定向沙箱/报价测试与 pnpm check:go 均退出 0（E:/agent-project/.tools/m3-artifact-scan-test.log、m3-artifact-scan-go.log）。无数据库/schema 改动，未重复 PG 套件。
 - 第 3 项进行中：官方当前换取/刷新为 v3，撤销为独立 v1/revoke；6f98834 已推送私有传输层与合成 HTTP 测试，pnpm check:go 退出 0（m3-oauth-provider-go.log）。本片新增 AES-256-GCM 绑定加密/密钥轮换及 PG schema 23 密文 CAS/原子审计账本；停用/撤权/改绑不允许获取或覆盖旧凭证，合成数据、真实 PG 的并发 CAS、审计失败回滚与 RLS 负例通过（m3-oauth-ledger-db.log），pnpm check:go 退出 0（m3-oauth-ledger-go.log）。全量 pnpm test:db 退出 1，唯一失败为迁移测试仍假设 channel 10 张表；更新为 12 张且继续要求全部强制 RLS 后，数据库包重跑退出 0（m3-oauth-ledger-migrations.log），全量其余包均通过（m3-oauth-ledger-all-db.log）。测试库/角色残留 0，专用 PG 已停止。日志位于 E:/agent-project/.tools/。
-- 第 3 项下一步：实现 state/PKCE 会话、换取/刷新前持久意图、未知结果拒绝、本地先撤销和 Reader/Syncer/启动接线；现有 Credential 仍从环境变量载入静态 Token。协议/加密账本单点见 contracts/feishu-docs.md；不能把账本基础视为完整 OAuth 流程验收。PG 当前 schema 23，SQLite 仍为 8。
+- 第 3 项生命周期：已实现 state/PKCE 会话、换取/刷新前持久意图、未知结果拒绝、本地先撤销、Reader 读取前解析与结束前版本检查，并接显式 use_oauth 来源/启动配置；静态 Token 模式保留，混用拒绝。合成 HTTP＋真实 PG 覆盖重建对象、刷新、密钥轮换、持久撤销、错误身份、并发刷新、读取中撤销及未授权启动拒绝。定向 PG/来源回归退出 0（m3-oauth-lifecycle-db-final.log），pnpm check:go 退出 0（m3-oauth-lifecycle-go.log）。首轮合成撤销夹具缺 Content-Type 导致 SDK 拒绝，修正夹具后通过，失败保留于 m3-oauth-lifecycle-db.log。无新 schema 变化，未重复全量 test:db；PG 残留 0、专用集群已停止。
+- 第 3 项下一步：补受控授权管理入口及未知结果人工核对入口，不能让操作员清表或修改密文解锁；该项尚未完成。协议/状态/加密/配置单点见 contracts/feishu-docs.md 和 deploy/feishu.md。PG 当前 schema 23，SQLite 仍为 8。
 - 后续 CI：2e63847 与 813e982 的 39483392615/39483950043 均 success；6f98834 的 39485157171 也已 success。
 
 ## 定位当前里程碑

@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -19,6 +20,37 @@ func sourceTestConfig() Config {
 		Sources: []SourceConfig{{SourceID: uuid.New(), Documents: []string{"doxcTest"},
 			Owner: SourceUser{OpenID: "ou_sync", AccessTokenEnv: "SOURCE_OWNER"}, Recipients: []SourceUser{{OpenID: "ou_employee", AccessTokenEnv: "SOURCE_READER"}},
 			Space: knowledge.Space{ID: uuid.New(), Model: "embed", ModelRevision: "v1"}, PollSeconds: 10}}}
+}
+
+func TestSourceOAuthConfiguration(t *testing.T) {
+	c := sourceTestConfig()
+	c.OAuth = &OAuthConfig{ActiveKeyID: "v1", KeyEnvs: map[string]string{"v1": "SOURCE_OAUTH_KEY"}}
+	c.Sources[0].Owner = SourceUser{OpenID: "ou_sync", UseOAuth: true}
+	c.Sources[0].Recipients = nil
+	raw, _ := json.Marshal(c)
+	if _, err := Parse(raw); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SOURCE_OAUTH_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	prepared, err := c.sourceCredentials()
+	if err != nil || len(prepared) != 1 || prepared[0].oauthKeys == nil {
+		t.Fatal("OAuth key preparation", err)
+	}
+	c.Sources[0].Owner.AccessTokenEnv = "STATIC_TOKEN"
+	raw, _ = json.Marshal(c)
+	if _, err := Parse(raw); err == nil {
+		t.Fatal("ambiguous static/OAuth accepted")
+	}
+	c.Sources[0].Owner.AccessTokenEnv = ""
+	t.Setenv("SOURCE_OAUTH_KEY", "invalid-key")
+	if _, err := c.sourceCredentials(); err == nil {
+		t.Fatal("invalid encryption key accepted")
+	}
+	c.OAuth = nil
+	raw, _ = json.Marshal(c)
+	if _, err := Parse(raw); err == nil {
+		t.Fatal("OAuth without keys accepted")
+	}
 }
 
 func TestSourceConfiguration(t *testing.T) {

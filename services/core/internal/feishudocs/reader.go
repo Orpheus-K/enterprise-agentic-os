@@ -40,8 +40,10 @@ type User struct {
 }
 
 type Credential struct {
-	user  User
-	token string
+	user       User
+	token      string
+	oauth      *OAuth
+	generation int64
 }
 
 func (Credential) String() string   { return "[Feishu credential redacted]" }
@@ -52,7 +54,7 @@ func NewCredential(user User, accessToken string) (Credential, error) {
 		accessToken == "" || len(accessToken) > 8192 || strings.ContainsAny(accessToken, " \r\n\t") {
 		return Credential{}, ErrInvalid
 	}
-	return Credential{user, accessToken}, nil
+	return Credential{user: user, token: accessToken}, nil
 }
 
 // Blocks retain complete raw objects, including unknown future fields. A later
@@ -99,7 +101,14 @@ func identifier(s string) bool {
 }
 
 func (r *Reader) validate(c Credential, id string) error {
-	if _, err := NewCredential(c.user, c.token); err != nil || !identifier(id) || c.user.AppID != r.appID {
+	token := c.token
+	if c.oauth != nil {
+		if c.oauth.user != c.user {
+			return ErrInvalid
+		}
+		token = "bound-oauth-reference"
+	}
+	if _, err := NewCredential(c.user, token); err != nil || !identifier(id) || c.user.AppID != r.appID {
 		return ErrInvalid
 	}
 	return nil
@@ -148,10 +157,23 @@ func (r *Reader) CheckAccess(ctx context.Context, c Credential, id string) error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if c.oauth != nil {
+		var err error
+		c, err = c.oauth.access(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	if err := r.verifyUser(ctx, c); err != nil {
 		return err
 	}
-	return r.permission(ctx, c, id)
+	if err := r.permission(ctx, c, id); err != nil {
+		return err
+	}
+	if c.oauth != nil {
+		return c.oauth.current(ctx, c.generation)
+	}
+	return nil
 }
 
 func (r *Reader) metadata(ctx context.Context, c Credential, id string) (Snapshot, error) {
@@ -176,6 +198,13 @@ func (r *Reader) Read(ctx context.Context, c Credential, id string) (Snapshot, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if c.oauth != nil {
+		var err error
+		c, err = c.oauth.access(ctx)
+		if err != nil {
+			return Snapshot{}, err
+		}
+	}
 	if err := r.verifyUser(ctx, c); err != nil {
 		return Snapshot{}, err
 	}
@@ -240,6 +269,11 @@ func (r *Reader) Read(ctx context.Context, c Credential, id string) (Snapshot, e
 	}
 	if err := r.permission(ctx, c, id); err != nil {
 		return Snapshot{}, err
+	}
+	if c.oauth != nil {
+		if err := c.oauth.current(ctx, c.generation); err != nil {
+			return Snapshot{}, err
+		}
 	}
 	return out, nil
 }

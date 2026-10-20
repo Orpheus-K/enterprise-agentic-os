@@ -6,12 +6,95 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"agentos.local/core/internal/database"
 	"agentos.local/core/internal/identity"
 	"agentos.local/core/internal/testpg"
 	"github.com/google/uuid"
 )
+
+func TestOAuthLifecyclePostgres(t *testing.T) {
+	pg := testpg.New(t)
+	m, err := database.NewMigrator(t.Context(), pg.MigrationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Up(t.Context())
+	if err = errors.Join(err, m.Close()); err != nil {
+		t.Fatal(err)
+	}
+	fixture, tokens, revokes := oauthFlow(t, "valid")
+	member := uuid.New()
+	for _, statement := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO iam.tenants VALUES($1,'synthetic',true)`, []any{fixture.tenant}},
+		{`INSERT INTO iam.members VALUES($1,$2,'synthetic',true)`, []any{fixture.tenant, member}},
+		{`INSERT INTO iam.identity_links VALUES($1,'feishu',$2,$3,$4,true)`, []any{fixture.tenant, "feishu:" + fixture.user.AppID + ":" + fixture.user.TenantKey, fixture.user.OpenID, member}},
+	} {
+		if _, err := pg.Admin.Exec(t.Context(), statement.sql, statement.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db, err := database.Open(t.Context(), pg.RuntimeURL, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	open := func(keys *OAuthKeys) *OAuth {
+		t.Helper()
+		o, err := NewOAuth(db, fixture.tenant, fixture.user, "synthetic-app-secret", keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.provider = fixture.provider
+		o.reader = fixture.reader
+		return o
+	}
+	o := open(fixture.keys)
+	if err := o.CheckReady(t.Context()); !errors.Is(err, ErrOAuthMissing) {
+		t.Fatal(err)
+	}
+	if err := o.Complete(t.Context(), oauthBegin(t, o), "code"); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.CheckReady(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	oldReference := o.Credential()
+	// A fresh object reads only persisted state and rotates to the current key.
+	o = open(oauthTestKeys(t, "new"))
+	now := o.provider.now()
+	o.provider.now = func() time.Time { return now.Add(time.Hour) }
+	if err := o.reader.CheckAccess(t.Context(), o.Credential(), "doxcTest"); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.Load() != 2 {
+		t.Fatal("incorrect exchange/refresh count")
+	}
+	var keyID string
+	var ciphertext []byte
+	if err := pg.Admin.QueryRow(t.Context(), `SELECT key_id,ciphertext FROM channel.oauth_credentials`).Scan(&keyID, &ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	if keyID != "new" || bytes.Contains(ciphertext, []byte("synthetic-secret")) {
+		t.Fatal("rotation or encryption failed")
+	}
+	if err := o.Revoke(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.reader.CheckAccess(t.Context(), oldReference, "doxcTest"); !errors.Is(err, ErrOAuthRevoked) {
+		t.Fatal("old instance retained access", err)
+	}
+	if revokes.Load() != 2 {
+		t.Fatal("not both tokens revoked")
+	}
+	if err := open(oauthTestKeys(t, "new")).CheckReady(t.Context()); !errors.Is(err, ErrOAuthRevoked) {
+		t.Fatal("revocation not persisted", err)
+	}
+}
 
 func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
 	pg := testpg.New(t)

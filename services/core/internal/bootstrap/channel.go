@@ -47,6 +47,7 @@ type Config struct {
 	Retrieval            *conversation.RetrievalPolicy `json:"retrieval,omitempty"`
 	Operations           *OperationsConfig             `json:"operations,omitempty"`
 	Sources              []SourceConfig                `json:"sources,omitempty"`
+	OAuth                *OAuthConfig                  `json:"oauth,omitempty"`
 }
 type OperationsConfig struct {
 	TokenEnv string `json:"token_env"`
@@ -72,7 +73,7 @@ func Parse(raw []byte) (Config, error) {
 		if !filepath.IsAbs(c.SQLitePath) || c.DatabaseURLEnv != "" {
 			return c, errors.New("SQLite requires an absolute sqlite_path and forbids database_url_env")
 		}
-		if c.Embedding != nil || c.Retrieval != nil || len(c.Sources) != 0 || c.Skills != nil || c.Tools != nil || c.QuotationWASMSHA256 != "" || (c.Approval != nil && c.Approval.NotifySubject != "") {
+		if c.Embedding != nil || c.Retrieval != nil || len(c.Sources) != 0 || c.OAuth != nil || c.Skills != nil || c.Tools != nil || c.QuotationWASMSHA256 != "" || (c.Approval != nil && c.Approval.NotifySubject != "") {
 			return c, errors.New("SQLite does not support knowledge, vectors, skills, tools, quotations or notifications")
 		}
 	default:
@@ -320,7 +321,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	adapter = adapter.WithApprovals(store)
 	channel := &Channel{closeStorage: closeStorage, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
 	if db != nil {
-		channel.sources, err = c.openSources(ctx, db, preparedSources)
+		channel.sources, err = c.openSources(ctx, db, preparedSources, appSecret)
 		if err != nil {
 			return nil, err
 		}

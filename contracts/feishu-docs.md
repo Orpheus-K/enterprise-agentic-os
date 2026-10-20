@@ -25,7 +25,17 @@ Read 先验身份和权限，再取文档元数据，将所有分页固定到初
 
 错误仅暴露分类，不包含 token、原文或供应商错误正文；SDK 日志关闭。输入无效、身份/权限拒绝、版本变化、快照超限分别失败，HTTP/协议/凭证过期等不可确定状态归为来源不可用。来源不可用不能解释为删除或全员撤权。凭证默认 JSON 与格式化输出不包含密钥。
 
-尚未实现：OAuth 获取/刷新、完整块类型支持、原生事件游标、事件订阅与主动撤回，以及真实租户联调。合成 HTTP 测试不证明这些能力或飞书线上权限配置；IAM 映射另用真实 PostgreSQL 的当前成员/链接撤销及改绑测试验证。
+尚未完成：OAuth 生命周期持久化与读取接线、完整块类型支持、原生事件游标、事件订阅与主动撤回，以及真实租户联调。OAuth 当前仅完成下述私有传输层；合成 HTTP 测试不证明完整生命周期或飞书线上权限配置；IAM 映射另用真实 PostgreSQL 的当前成员/链接撤销及改绑测试验证。
+
+## OAuth v3 传输契约
+
+2026-10-21 核对飞书官方当前文档：换取与刷新使用 `https://accounts.feishu.cn/oauth/v3/token`，表单提交 confidential client 的 client_id/client_secret；授权码换取带 HTTPS redirect_uri 和 PKCE code_verifier。v1/v2 token 接口已列为历史版本。本层不创建回调路由、不接收浏览器授权，也未实现 state/PKCE 会话持久化。[获取 Token 官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/get-user-access-token-v3)。
+
+有效期采用响应实际秒数，自请求开始计时；明确校验成功 code、Bearer、Token 格式和实际 scope，不将申请 scope 当已授予 scope。允许授权范围缩小；未获 offline_access 时不假设存在刷新凭证。刷新凭证单次使用，成功返回新凭证后旧凭证失效；未知结果不得重放。传输层没有自动重试，持久刷新意图和并发领取仍待实现。[刷新官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/refresh-user-access-token-v3)。
+
+撤销调用 `https://accounts.feishu.cn/oauth/v1/revoke`，成功为 HTTP 200 空响应；已失效 Token 也可返回成功。access_token 与 refresh_token 分别撤销，不能推断撤销刷新凭证会关闭所有历史 access_token。本地先拒绝后远端撤销及失败恢复仍待接线。[撤销官方契约](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/login-state-management/revoke-token)。
+
+所有生产地址固定、拒绝重定向，单请求 15 秒、响应最多 64 KiB。错误区分输入无效、过期、撤销、明确拒绝与结果未知；仅暴露 HTTP/业务码，不返回供应商正文、请求 URL 或凭证。合成测试覆盖表单协议、范围缩小/扩张、有效期、超限/畸形响应、取消、重定向及脱敏。加密存储、身份绑定验证、刷新防重放和 Syncer 消费者接线完成前，启动配置仍使用原有静态环境引用，不宣称 OAuth 流程可用。
 
 ## 单次同步执行
 

@@ -2,10 +2,8 @@ package operations
 
 import (
 	"agentos.local/core/internal/conversation"
-	"agentos.local/core/internal/database"
 	"agentos.local/core/internal/health"
 	"agentos.local/core/internal/identity"
-	identitypg "agentos.local/core/internal/identity/postgres"
 	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/telemetry"
 	"context"
@@ -25,13 +23,13 @@ import (
 type API struct {
 	token     [32]byte
 	identity  identity.ExternalIdentity
-	store     *conversation.Store
+	store     Store
 	readiness *health.Readiness
 	telemetry *telemetry.Telemetry
 	knowledge *knowledge.Store
 }
 
-func New(token string, external identity.ExternalIdentity, store *conversation.Store, ready *health.Readiness, tel *telemetry.Telemetry) (*API, error) {
+func New(token string, external identity.ExternalIdentity, store Store, ready *health.Readiness, tel *telemetry.Telemetry) (*API, error) {
 	if len(token) < 32 || strings.ContainsAny(token, " \t\r\n") {
 		return nil, errors.New("operations token must contain at least 32 non-whitespace bytes")
 	}
@@ -107,8 +105,18 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err = a.knowledgeOperation(ctx, r, w)
 	} else if operation == "ops.notice" {
-		result, err = a.noticeOperation(ctx, r, w)
+		noticeStore, supported := a.store.(NoticeStore)
+		if !supported {
+			w.WriteHeader(404)
+			return
+		}
+		result, err = a.noticeOperation(ctx, r, w, noticeStore)
 	} else if operation == "ops.quotation" {
+		quotationStore, supported := a.store.(QuotationStore)
+		if !supported {
+			w.WriteHeader(404)
+			return
+		}
 		if r.Method == http.MethodGet {
 			result, err = a.quotationDocument(ctx, r)
 		} else {
@@ -119,7 +127,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(400)
 				return
 			}
-			result, err = a.store.AmendQuotation(ctx, a.identity, in)
+			result, err = quotationStore.AmendQuotation(ctx, a.identity, in)
 		}
 	} else if operation == "ops.approval" {
 		if r.Method == http.MethodPost {
@@ -190,7 +198,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(400)
 			return
 		}
-		err = a.store.Operation(ctx, a.identity, "status.read", func(database.Queries) error { return nil })
+		err = a.store.AuthorizeOperation(ctx, a.identity, "status.read")
 		if err == nil {
 			if operation == "ops.status" {
 				result = a.readiness.Snapshot(ctx)
@@ -209,7 +217,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(409)
 		case errors.Is(err, identity.ErrUnauthenticated):
 			w.WriteHeader(401)
-		case errors.Is(err, identitypg.ErrForbidden):
+		case errors.Is(err, identity.ErrForbidden):
 			w.WriteHeader(403)
 		default:
 			w.WriteHeader(503)

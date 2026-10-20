@@ -10,7 +10,7 @@ import (
 	"net/url"
 )
 
-func (a *API) noticeOperation(ctx context.Context, r *http.Request, w http.ResponseWriter) (conversation.NoticeSnapshot, error) {
+func (a *API) noticeOperation(ctx context.Context, r *http.Request, w http.ResponseWriter, store NoticeStore) (conversation.NoticeSnapshot, error) {
 	if r.Method == http.MethodPost {
 		var in conversation.NoticeReconciliation
 		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
@@ -18,7 +18,7 @@ func (a *API) noticeOperation(ctx context.Context, r *http.Request, w http.Respo
 		if r.URL.RawQuery != "" || d.Decode(&in) != nil || d.Decode(new(any)) != io.EOF {
 			return conversation.NoticeSnapshot{}, conversation.ErrInvalidReconciliation
 		}
-		return a.store.ReconcileNotice(ctx, a.identity, in)
+		return store.ReconcileNotice(ctx, a.identity, in)
 	}
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil || len(values) != 2 || len(values["task_id"]) != 1 || len(values["notice_id"]) != 1 {
@@ -32,5 +32,5 @@ func (a *API) noticeOperation(ctx context.Context, r *http.Request, w http.Respo
 	if err != nil {
 		return conversation.NoticeSnapshot{}, conversation.ErrInvalidReconciliation
 	}
-	return a.store.InspectNotice(ctx, a.identity, task, id)
+	return store.InspectNotice(ctx, a.identity, task, id)
 }

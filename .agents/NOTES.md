@@ -5,14 +5,24 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：Worker 存储接口（2026-10-20）
+## 当前切片：运维存储接口（2026-10-21）
+
+- 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-operations-storage。
+- 收口范围：本轮完成运维接口验证、提交与工作目录统一；SQLite 启动入口是下一独立切片，不将 M3 标成退出。主目录旧改动已存入 stash ed1383291645d5e392d0649183a290d228ffc8ac；逐文件核对发现 database.go 为 schema 1/缺 immediate 的异常旧版本，未带入受测目录。主目录笔记已改为指向本页的入口。
+- 实现：R02/R15、A03/A08/A10、V06/V13；operations.Store 仅暴露查询/审批/核对与授权领域操作，不含 SQL 回调。两驱动新增 AuthorizeOperation，报价/通知为可选接口，SQLite 不支持则 404。规范见 [运维](../contracts/operations.md#运维存储接口)。
+- 定向证据：真实 SQLite 上同一 HTTP 处理器的任务/统计/审计/核对、状态/指标、能力撤销、身份撤销、冲突与留痕失败测试通过；未支持路由 404。基础包 go test 通过，无 schema 变更。
+- 收口证据：2026-10-21 在本目录重跑 pnpm check 与 go test -tags=integration -count=1 ./internal/operations ./internal/feishu，均退出 0；新日志 E:/agent-project/.tools/m3-operations-storage-close-check.log、m3-operations-storage-close-db.log 保存 EXIT_CODE=0。旧日志只保留历史输出，不倒填退出码。本次真实 SQLite HTTP 测试与 PG 集成回归通过；PG 测试库/角色残留 0，专用集群已停止。无 schema 变更，未重复全量 test:db。
+- 下一片：bootstrap 显式选择 SQLite、保持缺库/错误版本拒绝，提前拒绝知识/向量/技能/工具/报价/通知配置，接就绪探针及资源关闭；以真实 SQLite、合成渠道/模型验证启动与原响应审批闭环。当前渠道启动仍仅 PG。
+- 远端：cffd0c2 的 CI 39419894264/39419853013 已 success（2026-10-21 复核）；本片远端待确认。
+
+## 保留切片：Worker 存储接口（2026-10-20）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-worker-storage。
 - 实现：R03/R06、A03/A04/A08、V03/V05/V06；Worker.Store 从 PG 具体类型改为 ExecutionStore，通知、技能执行及知识通过独立能力接口调用，移除 Worker 直接访问 PG 连接。缺能力时明确拒绝相关任务，不实现 SQLite 空成功扩展；规范见 [任务](../contracts/task-runtime.md#worker-存储边界)。
 - SQLite 证据：同一 Worker 在真实 SQLite 文件上成功交付，模型/发送未知后不重放，模型后撤权不发送，重建仓储不重复调用；缺能力的技能/工具/报价/知识任务在外部调用前拒绝。定向 go test 通过。
 - 工程证据：`pnpm check` 退出 0（`E:/agent-project/.tools/m3-worker-storage-check.log`）。全量 test:db 首次 vet 发现 bootstrap 测试依赖 Worker.Store.Enqueue，已改成独立接收接口并保持原断言；失败日志 m3-worker-storage-db.log 保留，重跑全量 `pnpm test:db` 退出 0（m3-worker-storage-db-final.log），覆盖 PG 检索/审批/工具/报价/通知及全部共享驱动契约。测试库/角色残留 0，PG 已停止。
 - 下一片：拆分 operations API 的基础查询/审批/核对与可选报价/通知依赖，再为 bootstrap 配置 SQLite 并提前拒绝知识/向量、技能/工具/报价/通知。当前尚无 SQLite 渠道启动入口。
-- 远端：27ffce4 的 CI 39418969725/39418953628 仍 in_progress；本片远端待确认。
+- 远端：27ffce4 的 CI 39418969725/39418953628 已 success（2026-10-21 复核）；本片远端待确认。
 
 ## 保留切片：SQLite 显式迁移入口（2026-10-20）
 
@@ -20,7 +30,7 @@
 - 实现：R19、A03/A10、V15；agentos-migrate 新增 --sqlite 绝对文件路径，拒绝同时设置 PG 迁移 URL，复用独立前向迁移；无参数 PG 路径和离线 --version 保持。说明见 [SQLite 部署](../deploy/sqlite/README.md)。无 schema 变更。
 - 验证：cmd/migrate 与 sqlitedb 全包通过；`pnpm check` 退出 0（`E:/agent-project/.tools/m3-sqlite-migrate-check.log`）。构建后二进制实际创建/重复迁移均成功，冲突目标非零退出，临时数据库已删除。覆盖数据保留、未来 schema、坏参数不创建文件与输出失败；未重复 PG test:db，未修改 PG SQL。
 - 接线发现：Worker.Store 为 *conversation.Store，直接使用私有 prepareKnowledge/routeSummaries/bindRoute 和 db/tenant/app，另有 NotifyOne/LoadSkill/工具与报价方法；operations 和 bootstrap 也绑定 PG。下一片须按基础执行与可选能力拆分消费接口，并保留 PG 行为回归，再接 SQLite；禁止补空成功方法绕过未支持能力。知识/向量配置必须拒绝后才能开放运行入口。
-- 远端：3d6227c 的 CI 39418545746/39418507885 仍 in_progress；本片远端待确认。
+- 远端：3d6227c 的 CI 39418545746/39418507885 已 success（2026-10-21 复核）；本片远端待确认。
 
 ## 保留切片：SQLite 任务清单与统计（2026-10-20）
 
@@ -29,7 +39,7 @@
 - 定向证据：共享 PG/SQLite 分页、窗口、范围、审批统计、撤权与留痕失败契约通过（`E:/agent-project/.tools/m3-sqlite-reports-db-final.log`）。初轮夹具以 time.Time == 比较时区、以纳秒比较 PG 微秒参数均已修正；SQLite 独立测试覆盖纳秒边界转换。
 - 工程检查：首次 pnpm check 因 database.go 换行格式未过 gofmt 已修复，保留失败日志 m3-sqlite-reports-check.log；最终 `pnpm check` 退出 0（m3-sqlite-reports-check-final.log），包含 schema 升级保留与写锁回归；未重复全量 test:db。测试库/角色残留 0，PG 已停止。
 - 下一片：梳理运行入口需要的最小存储接口与不支持能力拒绝，再接 SQLite 基础文本任务/审批/审计/身份路径；不得为了接线伪装已支持技能、工具、通知或知识/向量。
-- 远端：facc89e 的 CI 39417806357/39417769893 仍 in_progress；本片远端待确认。
+- 远端：facc89e 的 CI 39417806357/39417769893 已 success（2026-10-21 复核）；本片远端待确认。
 
 ## 保留切片：SQLite 未知结果人工核对（2026-10-20）
 
@@ -37,7 +47,7 @@
 - 实现：R03/R06、A03/A04/A08、V03/V05/V06；schema 7 增加核对账本，当前操作员授权、证据/版本校验、状态/审计/账本同事务；重复请求返回首次结果，恢复后旧租约拒写。规范见 [任务契约](../contracts/task-runtime.md#sqlite-未知结果人工核对)。PG 仅抽取共享输入验证，schema 22 不变。
 - 证据：共享 PG/SQLite 九类场景及既有外部意图恢复回归通过（`E:/agent-project/.tools/m3-sqlite-reconcile-final-db.log`）；`pnpm check` 退出 0（`m3-sqlite-reconcile-check.log`），含 SQLite 迁移/写锁测试。测试库/角色残留 0，PG 已停止；schema 7/immediate 提交前复核正确。未重复全量 test:db。
 - 边界：库接口尚无 SQLite HTTP/Worker 接线，不包含工具/审批通知核对；下一片补任务清单/统计，依赖齐全后才开放运行入口，知识/向量仍须启动拒绝。
-- 远端：上一片 5e25e1a 的 CI 39416898817/39416862016 仍 in_progress；本片远端待确认。
+- 远端：上一片 5e25e1a 的 CI 39416898817/39416862016 已 success（2026-10-21 复核）；本片远端待确认。
 
 ## 保留切片：SQLite 单任务审计（2026-10-20）
 
@@ -46,7 +56,7 @@
 - 定向证据：共享 PG/SQLite 审计契约及迁移/写锁测试通过（`E:/agent-project/.tools/m3-sqlite-audit-final-db.log`），覆盖分页不泄露全局序号、返回条数/成员归属、跨范围空页、撤权/改绑、取消和访问留痕失败不返回数据。
 - 工程证据：`pnpm check` 退出 0（`E:/agent-project/.tools/m3-sqlite-audit-check.log`）；PG 生产实现与 schema 22 未变，未重复全量 test:db。测试库/角色残留 0，集群停止；隔离目录 schema 6/immediate 保持正确。
 - 下一片：SQLite 未知结果人工核对，再补任务清单/统计；通知、技能/工具、报价与运行入口仍按依赖移植，知识/向量启动拒绝要求保留。
-- 远端：上一片 49d6acd 的 CI 39416102942/39416059716 仍 in_progress，本片待确认。
+- 远端：上一片 49d6acd 的 CI 39416102942/39416059716 已 success（2026-10-21 复核），本片待确认。
 
 ## 保留切片：SQLite 原响应审批（2026-10-20）
 
@@ -69,14 +79,14 @@
 
 - 实现：R03/R06、A03/A04/A08、V03/V05/V06；SQLite schema 3 保留旧 pending 任务与审计，增加认领、当前身份复核、续租、基础文本状态推进及未知意图恢复扫描；复用共同状态转换判定。事务写锁后使用数据库时间，步骤审计原子且唯一；没有 Worker/配置入口。单点边界见 [任务契约](../contracts/task-runtime.md#sqlite-基础文本任务租约)。
 - 反例：首轮共享测试暴露版本起点差异（PG 初始版本 1、首次认领 2，SQLite 曾从 0 开始），已按 PG 修正。双驱动契约覆盖并发/范围、旧世代/旧版本、检查点复用与撤权、未知结果不重放、状态/恢复审计回滚；另覆盖成功终态与 schema 2→3 原数据保留。
-- 证据：定向真实 PG/SQLite 及既有 PG 检查点恢复测试通过（`.tools/m3-sqlite-leases-db.log`），`pnpm check` 退出 0（`m3-sqlite-leases-check.log`）；末补成功终态后双驱动契约通过（`m3-sqlite-leases-final.log`）。未重跑全量 test:db；测试库/角色残留 0，集群停止。上一片 35553ed CI 39411716145/39411708455 仍 in_progress，本片远端待确认。
+- 证据：定向真实 PG/SQLite 及既有 PG 检查点恢复测试通过（`.tools/m3-sqlite-leases-db.log`），`pnpm check` 退出 0（`m3-sqlite-leases-check.log`）；末补成功终态后双驱动契约通过（`m3-sqlite-leases-final.log`）。未重跑全量 test:db；测试库/角色残留 0，集群停止。上一片 35553ed CI 39411716145/39411708455 已 success（2026-10-21 复核），本片远端待确认。
 - 下一片：补齐 SQLite 业务能力授权与审批存储，再接人工核对及查询；所有依赖完成前不开放真实渠道，知识/向量仍须启动拒绝。PG schema 22 未变。
 
 ## 保留切片：SQLite 任务接收（2026-10-20）
 
 - 实现：R01/R02/R03/R15、A03/A04/A08、V06/V11/V12；复用渠道既有 Inbox.Enqueue 窄接口，新增 SQLite 文件任务/审计 schema 2。BEGIN IMMEDIATE 后解析当前身份，任务与审计原子提交；不改 PG 生产路径。单点边界见 [渠道契约](../contracts/feishu-model.md#sqlite-任务接收基础)。
 - 验证：PG/SQLite 共享接收契约通过（`.tools/m3-sqlite-inbox-db.log`），包括独立 SQLite 连接并发去重、重建实例、执行版本不覆盖、交叉键冲突、跨租户/应用、停用/改绑及审计失败回滚。`pnpm check` 通过（`m3-sqlite-inbox-check.log`）；末补 schema 1→2 保留身份升级测试后，SQLite 全包定向通过（`m3-sqlite-inbox-final.log`）。
-- 环境：PG schema 22 未改，未重跑全量 test:db；测试库/角色残留 0，集群停止。上一片 f59d93c 的 CI 39411112694/39411073583 仍 in_progress，本片远端待确认。
+- 环境：PG schema 22 未改，未重跑全量 test:db；测试库/角色残留 0，集群停止。上一片 f59d93c 的 CI 39411112694/39411073583 已 success（2026-10-21 复核），本片远端待确认。
 - 下一片：实现任务认领、租约世代、状态与审计原子推进的双驱动契约；随后推进审批、恢复与查询。SQLite 仍无运行入口，不得让真实渠道确认接收；知识/向量拒绝检查在运行入口开放前完成。
 
 ## 保留切片：SQLite 身份基础（2026-10-20）

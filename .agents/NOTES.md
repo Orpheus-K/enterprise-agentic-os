@@ -41,7 +41,9 @@
 - 轮询证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-source-bootstrap-check.log`、`m3-source-bootstrap-full-db.log`）；定向配置/启动/轮询 PG 测试通过（`m3-source-bootstrap-targeted.log`），覆盖缺凭证、禁用来源/空间、取消启动无调度、重复轮询及未知结果保护。schema 仍为 22；测试库/角色残留 0，测试集群已停止。本片远端待确认；未真实租户联调，未验证实际供应商持续运行。
 - 同步查询切片：R10/R12/R15、A06/A08、T08/T09、V07/V08；POST `/api/ops/knowledge/sync/inspect` 按当前来源同步权限＋knowledge.reconcile 授权返回指定任务的请求/世代/配置、租约有效性、Embedding 状态及输入摘要/空间/版本/切片 ID。不返回正文、向量或租约 Token，不把过期视作未发送证据；无迁移，schema 22。
 - 查询证据：`pnpm check:go` 通过（`.tools/m3-sync-inspect-check.log`）；知识模块全部 integration 通过（`m3-sync-inspect-db.log`）。同轮运维测试仅新增禁用来源夹具误用 source_id 列失败，改实际 id 后全部运维 integration 通过（`m3-sync-inspect-ops-final.log`）。覆盖活跃/过期意图、核对后两种状态、缺授权/撤权/禁用来源、不可访问来源/缺任务和输出脱敏。测试库/角色残留 0，测试集群已停止。未变更其他模块或 schema，未重跑全量 test:db；本片远端待确认。
-- 下一片：贯通来源同步至会话交付的独立验收，重点覆盖来源撤权后派生内容阻断及未知恢复。真实租户授权/Token 自动刷新仍未完成；SQLite 范围仍待决策，M3 不据此退出。
+- 贯通验证：T08/T09、V07/V08；扩展 TestNativeSyncPipeline，将真实同步发布接入会话查询嵌入、模型上下文、持久引用及发送。新增模型后原生收件人撤权/读取失败并再次同步，确认派生回答不发送、任务 failed 且不重放；已知向量接管后正常交付亦通过。只改测试/文档，无生产实现或 schema 变动。
+- 贯通证据：`go test -tags=integration -count=1 -run '^TestNativeSyncPipeline$' -v ./internal/feishudocs` 全部 7 场景通过（`.tools/m3-source-conversation-targeted.log`）。原生/模型/发送为替身，PG 为真实实例，不代替真实租户联调或权限传播时延验收；本片未重跑无关模块。测试库/角色残留 0，集群已停止。
+- 下一片：核查真实租户授权与 Token 更新生命周期及 M3 剩余差距，按实际需求继续开发；当前仅环境变量载入用户 Token，尚无 OAuth 获取/自动刷新。SQLite 范围仍待决策，M3 不据此退出。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

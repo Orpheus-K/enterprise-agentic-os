@@ -23,7 +23,7 @@ import (
 )
 
 func TestNativeSyncPipeline(t *testing.T) {
-	for _, mode := range []string{"valid", "recipient_denied", "owner_revoked", "embedding_unknown", "saved_recovery"} {
+	for _, mode := range []string{"valid", "recipient_denied", "owner_revoked", "embedding_unknown", "saved_recovery", "delivery_revoked", "delivery_unavailable"} {
 		t.Run(mode, func(t *testing.T) {
 			pg := testpg.New(t)
 			m, err := database.NewMigrator(t.Context(), pg.MigrationURL)
@@ -61,7 +61,7 @@ func TestNativeSyncPipeline(t *testing.T) {
 			var calls atomic.Int32
 			var nativeRevision atomic.Int64
 			nativeRevision.Store(7)
-			var failReads, revoked atomic.Bool
+			var failReads, revoked, recipientRevoked atomic.Bool
 			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				user := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 				if user != "ou_sync" && user != "ou_employee" {
@@ -73,7 +73,7 @@ func TestNativeSyncPipeline(t *testing.T) {
 				case "/open-apis/authen/v1/user_info":
 					data = map[string]any{"open_id": user, "tenant_key": "tenant"}
 				case "/open-apis/drive/v1/permissions/doxcTest/members/auth":
-					data = map[string]any{"auth_result": !(revoked.Load() || mode == "recipient_denied" && user == "ou_employee")}
+					data = map[string]any{"auth_result": !(revoked.Load() || (mode == "recipient_denied" || recipientRevoked.Load()) && user == "ou_employee")}
 				case "/open-apis/docx/v1/documents/doxcTest":
 					if failReads.Load() {
 						w.WriteHeader(503)
@@ -149,7 +149,7 @@ func TestNativeSyncPipeline(t *testing.T) {
 				t.Fatal(err)
 			}
 			worked, err := worker.RunOnce(t.Context())
-			success := mode == "valid" || mode == "recipient_denied"
+			success := mode == "valid" || mode == "recipient_denied" || strings.HasPrefix(mode, "delivery_")
 			if !worked || (err == nil) != success || calls.Load() != 1 {
 				t.Fatal("pipeline outcome", worked, err, calls.Load())
 			}
@@ -188,11 +188,32 @@ func TestNativeSyncPipeline(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 0
-			if mode == "valid" || mode == "saved_recovery" {
+			if mode == "valid" || mode == "saved_recovery" || strings.HasPrefix(mode, "delivery_") {
 				want = 1
 			}
 			if len(found) != want {
 				t.Fatal("published ACL did not match native access", len(found), want)
+			}
+			if want == 1 {
+				verifySyncedConversation(t, db, pg, tenant, actor, space, modelServer.URL, mode, func() {
+					if !strings.HasPrefix(mode, "delivery_") {
+						return
+					}
+					if mode == "delivery_revoked" {
+						recipientRevoked.Store(true)
+					} else {
+						failReads.Store(true)
+					}
+					owner := actor
+					owner.Subject = "ou_sync"
+					if err := store.PollSync(t.Context(), owner, sourceID, "doxcTest", worker.ConfigHash()); err != nil {
+						t.Fatal(err)
+					}
+					worked, err := worker.RunOnce(t.Context())
+					if !worked || (err != nil) != (mode == "delivery_unavailable") {
+						t.Fatal("revocation refresh outcome", worked, err)
+					}
+				})
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentos.local/core/internal/buildinfo"
 	"context"
 	"errors"
 	"log/slog"
@@ -26,6 +27,12 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		return buildinfo.Write(os.Stdout, "agentos")
+	}
+	if len(os.Args) != 1 {
+		return errors.New("agentos accepts only --version or no arguments")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var channel *bootstrap.Channel

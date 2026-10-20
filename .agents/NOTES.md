@@ -3,7 +3,7 @@
 ## 定位当前里程碑
 
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
-- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
 ## 当前切片：飞书 docx 读取器（2026-10-20）
 
@@ -43,7 +43,7 @@
 - 查询证据：`pnpm check:go` 通过（`.tools/m3-sync-inspect-check.log`）；知识模块全部 integration 通过（`m3-sync-inspect-db.log`）。同轮运维测试仅新增禁用来源夹具误用 source_id 列失败，改实际 id 后全部运维 integration 通过（`m3-sync-inspect-ops-final.log`）。覆盖活跃/过期意图、核对后两种状态、缺授权/撤权/禁用来源、不可访问来源/缺任务和输出脱敏。测试库/角色残留 0，测试集群已停止。未变更其他模块或 schema，未重跑全量 test:db；本片远端待确认。
 - 贯通验证：T08/T09、V07/V08；扩展 TestNativeSyncPipeline，将真实同步发布接入会话查询嵌入、模型上下文、持久引用及发送。新增模型后原生收件人撤权/读取失败并再次同步，确认派生回答不发送、任务 failed 且不重放；已知向量接管后正常交付亦通过。只改测试/文档，无生产实现或 schema 变动。
 - 贯通证据：`go test -tags=integration -count=1 -run '^TestNativeSyncPipeline$' -v ./internal/feishudocs` 全部 7 场景通过（`.tools/m3-source-conversation-targeted.log`）。原生/模型/发送为替身，PG 为真实实例，不代替真实租户联调或权限传播时延验收；本片未重跑无关模块。测试库/角色残留 0，集群已停止。
-- 下一片：核查真实租户授权与 Token 更新生命周期及 M3 剩余差距，按实际需求继续开发；当前仅环境变量载入用户 Token，尚无 OAuth 获取/自动刷新。SQLite 范围仍待决策，M3 不据此退出。
+- 下一片：核查真实租户授权与 Token 更新生命周期及 M3 剩余差距，按实际需求继续开发；当前仅环境变量载入用户 Token，尚无 OAuth 获取/自动刷新。SQLite 首版范围已确认，待实施，M3 不据此退出。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 
@@ -54,11 +54,11 @@
 - 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；a72d34a 的 [PR CI 39388783955](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388783955) 与 [push CI 39388741561](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388741561) 均 completed/success。工作分支 `codex/m3-conversation-retrieval`，草稿 PR #1。
 - 下一片：核实飞书云文档权限语义、版本/游标恢复及撤回信号，完成受控来源连接器与向量发布；不得以应用 Token 可读推导全员 ACL。真实租户/模型联调、中文召回质量、群聊接收范围及 M3 其余退出项仍待独立验收；SQLite 未启动重写。
 
-## SQLite 差距清单（未实现，需决策）
+## SQLite 差距清单（未实现，首片范围已确认）
 
 - 范围测量（生产 Go 代码 50 个文件）：经 database.Queries 写原生 PG SQL 的文件 18 个；RLS 上下文（current_setting/set_config）27 行/13 文件；FOR UPDATE 9 行/7 文件；数组 ANY/array_agg 19 行/7 文件；ON CONFLICT 9 行；clock_timestamp/now() 36 行/12 文件；pgx 类型 42 行/12 文件；plpgsql 函数（can_sync、source_ready）及 18 份迁移（约 35 KB，含强制 RLS、触发器、pgvector）。
 - 结论：不是换驱动，而是“数据访问层抽象＋迁移双份＋应用层授权等价＋同契约测试参数化”。SQLite 无 RLS，每条查询须显式带租户/安装/成员条件并通过同一套跨租户/越权负例；无 pgvector，向量检索须显式禁用。
-- 建议路线（待用户确认）：先抽取窄的存储接口并只迁移任务/审批/审计/身份（M1—M2 范围），知识与向量在 SQLite 版明确禁用并拒绝启动对应能力；同一契约测试在 PG 与 SQLite 双跑后再扩展。预计为多切片工作，不在单次提交内完成，也不宣称 A03 已满足。
+- 已确认路线（用户于 2026-10-20 确认）：先抽取窄的存储接口并只迁移任务/审批/审计/身份（M1—M2 范围），知识与向量在 SQLite 版明确禁用并拒绝启动对应能力；同一契约测试在 PG 与 SQLite 双跑后再扩展。预计为多切片工作，不在单次提交内完成，也不宣称 A03 已满足。
 ## M3 嵌入客户端（库层）
 
 - 实现：model.Embedder（固定 URL/模型/Revision/维度，拒绝维度或条数不符、溢出、超大响应；错误脱敏），共用 post() 已重构自 Client.request。契约见 [知识契约](../contracts/knowledge.md#查询向量来源与配置)。去掉维度检查的变异使测试失败。
@@ -69,7 +69,7 @@
 - 范围：R10/R13、A05/A06/A08、T13/V12 的配置边界。bootstrap.Config 增加可选 embedding，严格解析；启动独立读取 APIKeyEnv 并构造客户端，命名密钥缺失在数据库连接前失败。省略/null 不构造，启动无供应商探测或文本外发。
 - 证据：`go test -count=1 ./internal/bootstrap ./internal/model` 通过，覆盖配置、独立凭证、无鉴权服务及实际 Open 启动失败路径；`pnpm check` 退出 0，日志 `.tools/m3-embedding-config-check.log`；`git diff --check` 通过。本片未改变数据库语义，未运行 test:db；新改动尚无远端 CI 证据。
 - 边界：未接入业务 Embed 调用；不修改纯聊天运行指纹、不宣称 RAG 可用。部署片段见 [飞书配置](../deploy/feishu.md)，契约为单点规范。
-- 下一片：先检查 conversation 的版本、检查点和 delivery_pending 恢复路径；将检索空间/配置纳入运行绑定，持久化引用，模型前与交付前按当前身份取证。验证模型后撤权、恢复后旧引用、跨租户及审计失败；完成这些前不启用检索。随后再做飞书云文档来源与双通道恢复；SQLite 仍待范围决策。
+- 下一片：先检查 conversation 的版本、检查点和 delivery_pending 恢复路径；将检索空间/配置纳入运行绑定，持久化引用，模型前与交付前按当前身份取证。验证模型后撤权、恢复后旧引用、跨租户及审计失败；完成这些前不启用检索。随后再做飞书云文档来源与双通道恢复；SQLite 首版范围已确认，待实施。
 
 ## M3 会话引用检查点（2026-10-20，schema 19）
 
@@ -155,8 +155,15 @@
 - 运行时接线：可选 quotation_wasm_sha256 仅接受内置摘要，纳入 executionRevision；省略保留原指纹。WithQuotationSandbox 固定启用，新报价 SaveQuotation 与改单 AmendQuotation 运行精确折扣复核；与独立整数结果不一致或沙箱失败均阻断，不回退。金额汇总、目录与旧稿验证仍由可信 Go 承担；只声称折扣规则隔离。配置变更不接管旧运行版本任务/审批。
 - 运行时证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-wasm-runtime-check.log`、`m3-wasm-runtime-db.log`）；3 个 WASM 报价贯通场景通过（`m3-wasm-runtime-targeted.log`），含七五折审批、八折边界、改单重审、检查点失败恢复。单元测试覆盖摘要校验/指纹、取消和结果不一致不回退。schema 22 未变；测试库/角色残留 0，集群停止；本片远端待确认，无真实外发。
 - 近期远端：来源贯通 c04faec CI 39406978346/39406973183、备份 c44a543 CI 39407631878/39407623734 均 success。WASM 库层 4e21509 的 CI 尚未确认。
-- 下一片：核对 M3 剩余计算输出限额、隔离负例与部署材料；容器 Python、CPU 指令计量及文件产物扫描仍未实现，SQLite 范围仍待决策。
+- 下一片：核对 M3 剩余计算输出限额、隔离负例与部署材料；容器 Python、CPU 指令计量及文件产物扫描仍未实现，SQLite 首版范围已确认，待实施。
 - 证据：`pnpm check:go` 通过（`.tools/m3-wasm-rule-final.log`）。big.Int 差分覆盖边界/最大金额及 100 个固定随机样本；初版 i32 结果在 raw uint64 带高位导致拒绝，模块出口显式零扩展为 i64 后通过，保留边界测试。无数据库变更，未运行 test:db；远端 CI 待确认。下一步为显式启用与运行版本绑定。
 
 - WASM 输出边界补片：旧 Run 实际接受 9 个结果，负例复现于 `.tools/m3-wasm-output-before.log`。现于实例化前验证 i32/i64 签名，参数/结果各限 8；i32 超宽输入拒绝、输出零扩展，不放开文件或引用读取。含死循环启动段的非法签名先拒绝，避免执行后才发现超限。
 - 输出证据：`pnpm check:go` 通过（`.tools/m3-wasm-output-check.log`）；补启动段反例后沙箱与报价全部单元测试通过（`m3-wasm-output-final.log`），夹具另经独立 CompileModule 验证有效。无数据库变化，未重跑 test:db；远端待确认。仍未实现 CPU 指令计量、容器 Python 与文件扫描。
+
+## M3 离线制品身份（2026-10-20）
+
+- A10/V15 前置：两个 Go 二进制增加 --version JSON，报告编译平台、Go 版本、源码 revision/modified、schema 与内置规则摘要；来源缺失明确 null，不伪装干净制品。此路径在加载现场配置/数据库/监听之前退出，未知参数拒绝。
+- SQLite 用户决策：首版仅任务、审批、审计、身份；知识/向量启用须启动拒绝。继续采用窄存储抽象、PG/SQLite 同契约测试，不按替换驱动实现、不提前宣称全功能等价。
+- 制品身份验证：`pnpm check` 退出 0（`.tools/m3-artifact-identity-check.log`）；构建后冒烟执行两个 --version，配置故意无效仍离线成功，组件元数据一致，额外参数拒绝。缺构建来源单元测试通过。无数据库语义变更，未重跑 test:db；本片远端待确认。
+- 下一片：按已确认范围开始 SQLite 身份存储抽象；先检查 identity.Repository 的使用边界和事务授权上下文，再扩展任务/审批/审计，不引入知识/向量降级。

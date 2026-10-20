@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 10 项进行中：Go gopdf v0.38.2（MIT）实现固定字体/版式摘要、中文嵌入与确定金额展示，复用 quotation.Verify；缺字拒绝，不使用上游默认空格替换。合成中文 PDF 已由 Poppler 渲染检查，无缺字/裁切；测试字体为 OFL Noto Sans SC 固定来源裁剪，来源/摘要/许可见 quotation/testdata。PDF 正例、内容篡改、缺字、字体摘要与取消测试通过；同版本单次生成持久账本、发布授权与用章策略尚未实现，不声明第 10 项完成。样张仅 .tools/quotation-synthetic.pdf，无真实客户或印章。
+
 - 第 11 项无人值守库层范围已完成：真实 gRPC 并发繁忙、客户端取消、32 KiB 消息限制和执行版本/租约/截止时间负例；真实 PDF 文本、中文 DOCX、101 页、归档展开和输出超限验证通过。pnpm check:python 退出 0，38 项测试（m3-python-rpc-boundaries.log）；完整 pnpm check 退出 0（m3-python-full-check.log），含构建、前端/Go/Python 检查与制品冒烟；无数据库/schema 变化，未重跑 PG。没有可信隔离提供方，CLI 继续拒绝；真实对象存储/Go 任务消费者和容器隔离不在本次库层完成声明内。下一项进入正式报价 PDF 与用章库。用户指定的到期重置卡已在额度剩余 1% 时成功使用，查询已用 0%、剩余卡 2，不再重复兑换。
 
 - 第 11 项 gRPC 适配已实现：真实 loopback 验证提取成功、完整执行绑定、撤权、摘要错误、后端错误脱敏与无截止时间拒绝；28 项测试及 lint/mypy 通过（m3-python-rpc-check.log）。协议/边界见 contracts/compute.md；库层状态仍待补并发/取消 RPC、尺寸及解析边界反例后最终签收，不宣称完成真实隔离或业务接线。

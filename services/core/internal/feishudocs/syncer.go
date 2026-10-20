@@ -25,6 +25,7 @@ type Syncer struct {
 	recipients []Credential
 	space      knowledge.Space
 	hash       string
+	documents  map[string]bool
 }
 
 func NewSyncer(reader *MappedReader, store *knowledge.Store, source uuid.UUID, owner Credential, recipients []Credential, embedding model.EmbeddingConfig, key string, space knowledge.Space) (*Syncer, error) {
@@ -68,6 +69,31 @@ func NewSyncer(reader *MappedReader, store *knowledge.Store, source uuid.UUID, o
 
 func (s *Syncer) ConfigHash() string { return s.hash }
 
+// WithDocuments binds the administrator's explicit document scope to queued
+// work, so removing a document cannot leave it runnable under the same hash.
+func (s *Syncer) WithDocuments(documents []string) (*Syncer, error) {
+	if len(documents) == 0 || len(documents) > 1000 {
+		return nil, ErrInvalid
+	}
+	copy := *s
+	copy.documents = map[string]bool{}
+	for _, document := range documents {
+		if !identifier(document) || copy.documents[document] {
+			return nil, ErrInvalid
+		}
+		copy.documents[document] = true
+	}
+	raw, err := json.Marshal(struct {
+		Base      string
+		Documents []string
+	}{s.hash, documents})
+	if err != nil {
+		return nil, ErrInvalid
+	}
+	hash := sha256.Sum256(raw)
+	copy.hash = hex.EncodeToString(hash[:])
+	return &copy, nil
+}
 func proof(access Access) knowledge.MemberProof {
 	return knowledge.MemberProof{Actor: access.Actor, Principal: access.Principal}
 }
@@ -104,6 +130,9 @@ func (s *Syncer) RunOnce(ctx context.Context) (worked bool, result error) {
 	}()
 	ctx, cancel := context.WithDeadline(ctx, lease.Until)
 	defer cancel()
+	if s.documents != nil && !s.documents[lease.DocumentID] {
+		return true, ErrInvalid
+	}
 	checkpoint, err := s.store.LoadSyncEmbedding(ctx, owner.Actor, lease)
 	haveCheckpoint := err == nil
 	if err != nil && !errors.Is(err, knowledge.ErrUnavailable) {

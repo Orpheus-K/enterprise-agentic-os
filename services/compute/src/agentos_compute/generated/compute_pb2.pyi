@@ -52,13 +52,11 @@ class ExtractRequest(_message.Message):
     def __init__(self, execution: _Optional[_Union[Execution, _Mapping]] = ..., input: _Optional[_Union[ObjectReference, _Mapping]] = ..., input_grant: _Optional[str] = ..., output_grant: _Optional[str] = ...) -> None: ...
 
 class ExtractResponse(_message.Message):
-    __slots__ = ("execution", "input_sha256", "output", "block_count")
+    __slots__ = ("execution", "input_sha256", "output")
     EXECUTION_FIELD_NUMBER: _ClassVar[int]
     INPUT_SHA256_FIELD_NUMBER: _ClassVar[int]
     OUTPUT_FIELD_NUMBER: _ClassVar[int]
-    BLOCK_COUNT_FIELD_NUMBER: _ClassVar[int]
     execution: Execution
     input_sha256: str
     output: ObjectReference
-    block_count: int
-    def __init__(self, execution: _Optional[_Union[Execution, _Mapping]] = ..., input_sha256: _Optional[str] = ..., output: _Optional[_Union[ObjectReference, _Mapping]] = ..., block_count: _Optional[int] = ...) -> None: ...
+    def __init__(self, execution: _Optional[_Union[Execution, _Mapping]] = ..., input_sha256: _Optional[str] = ..., output: _Optional[_Union[ObjectReference, _Mapping]] = ...) -> None: ...

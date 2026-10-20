@@ -2,13 +2,18 @@ import hashlib
 import io
 import time
 from collections.abc import Callable
-from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, replace
 from uuid import uuid4
 
+import grpc
 import pytest
 from docx import Document
 
 from agentos_compute.documents import DOCX
+from agentos_compute.generated import compute_pb2 as wire
+from agentos_compute.generated import compute_pb2_grpc
+from agentos_compute.rpc import SERVER_OPTIONS, register
 from agentos_compute.worker import (
     CAPABILITY,
     OUTPUT_MEDIA,
@@ -139,3 +144,52 @@ def test_slot_released_after_failure() -> None:
         worker.extract(objects.request, active)
     objects.revoked = False
     assert worker.extract(objects.request, active).output.id == "output"
+
+
+@pytest.mark.parametrize("failure", ["none", "revoked", "digest", "backend", "deadline"])
+def test_real_grpc_contract(failure: str) -> None:
+    objects = Objects()
+    request = objects.request
+    message = wire.ExtractRequest(
+        execution=wire.Execution(**asdict(request.execution)),
+        input=wire.ObjectReference(**asdict(request.input)),
+        input_grant=request.input_grant,
+        output_grant=request.output_grant,
+    )
+    expected = {
+        "revoked": grpc.StatusCode.PERMISSION_DENIED,
+        "digest": grpc.StatusCode.DATA_LOSS,
+        "backend": grpc.StatusCode.INTERNAL,
+        "deadline": grpc.StatusCode.INVALID_ARGUMENT,
+    }
+    if failure == "revoked":
+        objects.revoked = True
+    elif failure == "digest":
+        objects.data = b"corrupt"
+    elif failure == "backend":
+
+        def fail() -> None:
+            raise OSError("synthetic-secret-never-return")
+
+        objects.on_stage = fail
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        server = grpc.server(executor, options=SERVER_OPTIONS)
+        register(server, DocumentWorker(objects))
+        port = server.add_insecure_port("127.0.0.1:0")
+        assert port
+        server.start()
+        try:
+            with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+                stub = compute_pb2_grpc.DocumentWorkerStub(channel)
+                if failure == "none":
+                    result = stub.Extract(message, timeout=5)
+                    assert result.execution == message.execution
+                    assert result.input_sha256 == message.input.sha256
+                    assert result.output.sha256 == hashlib.sha256(objects.staged[0]).hexdigest()
+                else:
+                    with pytest.raises(grpc.RpcError) as caught:
+                        stub.Extract(message, timeout=None if failure == "deadline" else 5)
+                    assert caught.value.code() == expected[failure]
+                    assert "synthetic-secret" not in caught.value.details()
+        finally:
+            server.stop(0).wait(2)

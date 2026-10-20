@@ -38,5 +38,5 @@ message ExtractResponse {
   Execution execution = 1;
   string input_sha256 = 2;
   ObjectReference output = 3;
-  uint32 block_count = 4;
+  reserved 4; // Block metadata belongs to the hashed output object.
 }

@@ -23,6 +23,8 @@ dev = [
     "mypy==2.4.0",
     "pytest==9.1.1",
     "grpcio-tools==1.84.0",
+    "grpc-stubs==1.53.0.6",
+    "types-protobuf>=7.35.1.20260906",
 ]
 
 [tool.ruff]

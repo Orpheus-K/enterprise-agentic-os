@@ -19,6 +19,7 @@ type Inbox struct {
 	identities    *identitysqlite.Repository
 	tenant        uuid.UUID
 	owner         uuid.UUID
+	approval      *conversation.ApprovalPolicy
 	app, revision string
 }
 
@@ -50,11 +51,15 @@ func (s *Inbox) Enqueue(ctx context.Context, m conversation.Message) (err error)
 		traceID, spanID = sc.TraceID().String(), sc.SpanID().String()
 	}
 	id := uuid.New().String()
+	var approver, ttl any
+	if s.approval != nil {
+		approver, ttl = s.approval.MemberID.String(), s.approval.TTLSeconds
+	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO channel_tasks
-(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,ingress_trace_id,ingress_span_id)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,ingress_trace_id,ingress_span_id,approval_member,approval_ttl)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
 		s.tenant.String(), id, p.MemberID.String(), s.app, m.Identity.Issuer, m.Identity.Subject,
-		m.EventID, m.MessageID, m.Fingerprint, s.revision, m.Text, traceID, spanID)
+		m.EventID, m.MessageID, m.Fingerprint, s.revision, m.Text, traceID, spanID, approver, ttl)
 	if err != nil {
 		return err
 	}

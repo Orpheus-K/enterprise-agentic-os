@@ -44,6 +44,11 @@ func (s *Store) WithApproval(p ApprovalPolicy) (*Store, error) {
 	return &copy, nil
 }
 func contentHash(text string) string {
+	return ApprovalContentHash(text)
+}
+
+// ApprovalContentHash binds approval to the exact response bytes.
+func ApprovalContentHash(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
@@ -68,6 +73,13 @@ type ApprovalDecision struct {
 	Version     int64     `json:"version"`
 	ContentHash string    `json:"content_hash"`
 	Decision    string    `json:"decision"`
+}
+
+func (in ApprovalDecision) Validate() error {
+	if in.TaskID == uuid.Nil || in.ID == uuid.Nil || in.RequestID == uuid.Nil || in.Version < 1 || in.Revision == "" || len(in.ContentHash) != 64 || (in.Decision != "approve" && in.Decision != "reject") {
+		return ErrInvalidApproval
+	}
+	return nil
 }
 
 // Suspend only an owned pre-delivery checkpoint. Waiting owns no execution lease.
@@ -220,8 +232,8 @@ func (s *Store) InspectApproval(ctx context.Context, actor identity.ExternalIden
 	return out, nil
 }
 func (s *Store) DecideApproval(ctx context.Context, actor identity.ExternalIdentity, in ApprovalDecision) (Approval, error) {
-	if in.TaskID == uuid.Nil || in.ID == uuid.Nil || in.RequestID == uuid.Nil || in.Version < 1 || in.Revision == "" || len(in.ContentHash) != 64 || (in.Decision != "approve" && in.Decision != "reject") {
-		return Approval{}, ErrInvalidApproval
+	if err := in.Validate(); err != nil {
+		return Approval{}, err
 	}
 	var out Approval
 	err := s.Operation(ctx, actor, "task.approve", func(q database.Queries) error {

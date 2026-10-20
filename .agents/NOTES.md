@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 业务能力授权（2026-10-20）
+## 当前切片：SQLite 原响应审批（2026-10-20）
+
+- 当前本机开发目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-sqlite-approvals-delivery`。原目录的 sqlitedb/database.go 反复被未知来源覆盖；不再以原目录为受测制品。C 盘临时 worktree 因空间耗尽/写入受限已归档，改动已完整转移到 E 盘隔离目录。
+
+- 实现：R03/R04/R06、A03/A04/A08、V03/V05/V06；schema 5 保存原审批策略，挂起/查看/决定/到期与状态及审计原子提交，发送意图前重验摘要、期限、当前审批人映射与能力。NotifySubject 明确拒绝，尚无通知、报价改单、Worker/HTTP 接线。契约见 [任务](../contracts/task-runtime.md#sqlite-原响应审批)。
+- 反例：首轮共享夹具复用 UUID/文本参数导致 PG 42P08，已拆分。sqlitedb/database.go 又出现 schema 1/缺写锁状态，按用户已有“非有意改动、恢复”授权修正为本片 schema 5/immediate；提交前须复核。修正后双驱动初轮审批与迁移通过（`.tools/m3-sqlite-approvals-db-fixed.log`）；更早失败日志保留在 m3-sqlite-approvals-db.log。
+- 最终证据：E 盘隔离目录的 `pnpm check` 与全量 `pnpm test:db` 均退出 0；日志位于 `E:/agent-project/.tools/m3-sqlite-approvals-e-check.log`、`m3-sqlite-approvals-e-full-db.log`，包含 11 类 PG/SQLite 审批场景及迁移/写锁回归。测试库与角色残留 0，PG 集群停止；受测目录 schema 5/immediate 保持正确。原目录的 m3-sqlite-approvals-check/full-db.log 为被旧文件覆盖后的失败证据，不计作通过；远端 CI 待确认。
+- 下一片：SQLite 未知结果人工核对与审计查询，补齐领域契约后再接运行入口；通知、报价/技能等依赖需逐片移植，知识/向量在 SQLite 下启动拒绝。
+
+## 保留切片：SQLite 业务能力授权（2026-10-20）
 
 - 实现：R02/R15、A03/A08、V06/V13；SQLite schema 4 增加审计、状态、任务核对与审批四种应用级能力；两个驱动提供 RequireCapabilityIn，在领域事务内解析当前映射并检查能力，失败无 Principal。统一 ErrForbidden，PG 旧名称保留同一错误身份供现有调用方使用。
 - 接线：PG Operation 改为同事务解析映射、能力检查和领域回调；审批/核对在业务行锁后的复核保持。SQLite 不提供隐式 RLS 或无范围 SQL 回调，仍无运行入口。规范见 [身份](../contracts/identity.md) 与 [运维](../contracts/operations.md)。

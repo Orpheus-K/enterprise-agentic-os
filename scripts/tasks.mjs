@@ -2,17 +2,19 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { offlineTarget } from "./offline-target.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const core = path.join(root, "services/core");
 const compute = path.join(root, "services/compute");
 const go = process.env.GO_BINARY ?? "go";
 
-function run(command, args, cwd = root, capture = false) {
+function run(command, args, cwd = root, capture = false, env = process.env) {
   const result = spawnSync(command, args, {
     cwd,
     stdio: capture ? "pipe" : "inherit",
     encoding: "utf8",
+    env,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -55,16 +57,30 @@ function checkGo() {
 function checkPython() {
   run("uv", ["sync", "--locked"], compute);
   for (const args of [
-    ["ruff", "check", "."],
-    ["ruff", "format", "--check", "."],
+    [
+      "ruff",
+      "check",
+      ".",
+      "../../scripts/test-offline-linux.py",
+      "../../deploy/offline/verify.py",
+    ],
+    [
+      "ruff",
+      "format",
+      "--check",
+      ".",
+      "../../scripts/test-offline-linux.py",
+      "../../deploy/offline/verify.py",
+    ],
     ["mypy"],
     ["pytest"],
   ])
     run("uv", ["run", "--locked", ...args], compute);
 }
 
-function buildCore() {
-  mkdirSync(path.join(root, "dist"), { recursive: true });
+function buildCore(target) {
+  const output = path.join(root, "dist", ...(target ? [target.name] : []));
+  mkdirSync(output, { recursive: true });
   for (const [binary, entrypoint] of [
     ["agentos", "agentos"],
     ["agentos-migrate", "migrate"],
@@ -76,13 +92,20 @@ function buildCore() {
         "-trimpath",
         "-o",
         path.join(
-          root,
-          "dist",
-          process.platform === "win32" ? `${binary}.exe` : binary,
+          output,
+          target
+            ? `${binary}${target.extension}`
+            : process.platform === "win32"
+              ? `${binary}.exe`
+              : binary,
         ),
         `./cmd/${entrypoint}`,
       ],
       core,
+      false,
+      target
+        ? { ...process.env, GOOS: target.os, GOARCH: "amd64", CGO_ENABLED: "0" }
+        : process.env,
     );
   }
 }
@@ -94,6 +117,7 @@ switch (task) {
     pnpm("boundaries");
     pnpm("typecheck");
     pnpm("test");
+    run(process.execPath, ["--test", "scripts/offline-sbom.test.mjs"]);
     stageWeb();
     checkGo();
     checkPython();
@@ -108,13 +132,24 @@ switch (task) {
     run("uv", ["lock", "--check"], compute);
     run("uv", ["build"], compute);
     break;
-  case "offline":
-    if (process.argv.length !== 4 || !path.isAbsolute(process.argv[3]))
-      throw new Error("pnpm package:offline <new absolute output directory>");
+  case "offline": {
+    if (
+      ![4, 5].includes(process.argv.length) ||
+      !path.isAbsolute(process.argv[3])
+    )
+      throw new Error(
+        "pnpm package:offline <new absolute output directory> [windows-amd64|linux-amd64]",
+      );
+    const target = offlineTarget(process.argv[4]);
     stageWeb();
-    buildCore();
-    run(process.execPath, ["scripts/package-offline.mjs", process.argv[3]]);
+    buildCore(target);
+    run(process.execPath, [
+      "scripts/package-offline.mjs",
+      process.argv[3],
+      target.name,
+    ]);
     break;
+  }
   case "go":
     stageWeb();
     checkGo();

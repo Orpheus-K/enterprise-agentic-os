@@ -9,6 +9,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createSBOM } from "./offline-sbom.mjs";
+import { offlineTarget } from "./offline-target.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const go = process.env.GO_BINARY ?? "go";
@@ -40,13 +42,24 @@ function files(directory, prefix = "") {
     })
     .sort();
 }
-if (process.platform !== "win32" || process.arch !== "x64")
-  throw new Error(
-    "This first offline profile is certified only on Windows/amd64",
-  );
+const target = offlineTarget(process.argv[3]);
 const destination = process.argv[2];
-if (!destination || process.argv.length !== 3 || !path.isAbsolute(destination))
-  throw new Error("Usage: package-offline.mjs <new absolute output directory>");
+if (!destination || process.argv.length !== 4 || !path.isAbsolute(destination))
+  throw new Error(
+    "Usage: package-offline.mjs <new absolute output directory> <target>",
+  );
+function binaryVersion(source) {
+  if (target.os !== "linux" || process.platform !== "win32")
+    return run(source, ["--version"]);
+  const distro = process.env.AGENTOS_WSL_DISTRO;
+  if (!distro)
+    throw new Error(
+      "Linux cross-package requires AGENTOS_WSL_DISTRO for actual binary identity verification",
+    );
+  const prefix = ["--distribution", distro, "--exec"];
+  const linuxPath = run("wsl.exe", [...prefix, "wslpath", "-a", source]).trim();
+  return run("wsl.exe", [...prefix, linuxPath, "--version"]);
+}
 // Refuse overwrite: no recursive deletion of existing packages or customer data.
 mkdirSync(destination);
 const write = (name, value) => {
@@ -59,19 +72,26 @@ const copy = (source, name) => {
   cpSync(source, path.join(destination, name));
 };
 const identities = [];
+const binaries = new Map();
 const modules = new Map();
 const revision = run("git", ["rev-parse", "HEAD"]).trim();
 for (const component of ["agentos", "agentos-migrate"]) {
-  const source = path.join(root, "dist", `${component}.exe`);
-  const identity = JSON.parse(run(source, ["--version"]));
+  const source = path.join(
+    root,
+    "dist",
+    target.name,
+    `${component}${target.extension}`,
+  );
+  const identity = JSON.parse(binaryVersion(source));
   if (
     identity.component !== component ||
-    identity.os !== "windows" ||
+    identity.os !== target.os ||
     identity.architecture !== "amd64" ||
     identity.source?.revision !== revision
   )
     throw new Error(`Stale or incompatible binary: ${component}`);
   identities.push(identity);
+  binaries.set(component, readFileSync(source));
   const info = JSON.parse(run(go, ["version", "-m", "-json", source]));
   for (const mod of info.Deps) {
     if (mod.Replace || !mod.Version || !mod.Sum)
@@ -84,7 +104,7 @@ for (const component of ["agentos", "agentos-migrate"]) {
       throw new Error(`Conflicting module ${mod.Path}`);
     modules.set(mod.Path, mod);
   }
-  copy(source, `bin/${component}.exe`);
+  copy(source, `bin/${component}${target.extension}`);
 }
 if (
   JSON.stringify({ ...identities[0], component: "" }) !==
@@ -206,19 +226,30 @@ for (const group of Object.values(npmLicenses)) {
   }
 }
 write(
+  "SBOM.cdx.json",
+  `${JSON.stringify(createSBOM(dependencies, identities, binaries), null, 2)}\n`,
+);
+write(
   "DEPENDENCIES.json",
   `${JSON.stringify({ format: 1, description: "Original license texts, not a legal clearance or SPDX SBOM. npm is a conservative installed production dependency superset.", dependencies }, null, 2)}\n`,
 );
-for (const [source, target] of [
-  ["deploy/offline/INSTALL.md", "INSTALL.md"],
-  ["deploy/offline/Verify.ps1", "Verify.ps1"],
+for (const [source, filename] of [
+  [
+    target.os === "windows"
+      ? "deploy/offline/INSTALL.md"
+      : "deploy/offline/INSTALL-linux.md",
+    "INSTALL.md",
+  ],
+  target.os === "windows"
+    ? ["deploy/offline/Verify.ps1", "Verify.ps1"]
+    : ["deploy/offline/verify.py", "verify.py"],
   ["deploy/sqlite/README.md", "docs/deploy/sqlite/README.md"],
   ["deploy/feishu.example.json", "docs/deploy/feishu.example.json"],
   ["contracts/identity.md", "docs/contracts/identity.md"],
   ["contracts/task-runtime.md", "docs/contracts/task-runtime.md"],
   ["contracts/operations.md", "docs/contracts/operations.md"],
 ])
-  copy(path.join(root, source), target);
+  copy(path.join(root, source), filename);
 const contents = files(destination).map((name) => ({
   path: name,
   sha256: hash(path.join(destination, name)),
@@ -228,7 +259,7 @@ write(
   `${JSON.stringify(
     {
       format: 1,
-      profile: "windows-amd64-sqlite-core",
+      profile: target.profile,
       release_status: "internal-validation-only",
       source: identities[0].source,
       binaries: identities,

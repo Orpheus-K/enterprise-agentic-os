@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { createSBOM } from "./offline-sbom.mjs";
 
 const source = process.argv[2];
 if (
@@ -75,6 +76,24 @@ try {
   verify();
   const manifest = JSON.parse(
     readFileSync(path.join(installed, "MANIFEST.json"), "utf8"),
+  );
+  const inventory = JSON.parse(
+    readFileSync(path.join(installed, "DEPENDENCIES.json"), "utf8"),
+  );
+  assert.deepEqual(
+    JSON.parse(readFileSync(path.join(installed, "SBOM.cdx.json"), "utf8")),
+    createSBOM(
+      inventory.dependencies,
+      manifest.binaries,
+      new Map(
+        manifest.binaries.map((identity) => [
+          identity.component,
+          readFileSync(
+            path.join(installed, "bin", `${identity.component}.exe`),
+          ),
+        ]),
+      ),
+    ),
   );
   for (const identity of manifest.binaries) {
     const executable = path.join(installed, "bin", `${identity.component}.exe`);

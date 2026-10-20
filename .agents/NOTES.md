@@ -3,7 +3,7 @@
 ## 当前切片：无人值守补齐（2026-10-21）
 
 - 受测目录为 E:/agent-project/.tools/sqlite-approval-verify；4fe8851 及其前三个指定祖先已推送 origin/codex/m3-operations-storage。
-- 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 2 项原四个提交/CI 已闭环；第 3 项 OAuth 合成流程与管理入口完成（见下）；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成；第 7 项知识审计独立授权/统计已完成（见下）；其余联合恢复、SBOM/多平台、PDF、Python Worker、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
+- 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 2 项原四个提交/CI 已闭环；第 3 项 OAuth 合成流程与管理入口完成（见下）；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成；第 7 项知识审计独立授权/统计已完成（见下）；第 8 项 SBOM/Windows 与 Linux/amd64 构建验包已完成（见下）；其余联合恢复、PDF、Python Worker、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
 - 第 4 项证据：pnpm check 退出 0（E:/agent-project/.tools/m3-online-backup-check.log）；补充在线恢复审批/撤权后 go test ./internal/bootstrap ./internal/sqlitedb ./cmd/migrate 退出 0（m3-online-backup-final.log）。首次定向测试因宿主默认临时目录/缓存访问拒绝失败，改用既有 E 盘工具目录后通过；未改变全局环境。无 PG/schema 变更，未重复全量 test:db。
 - 第 2 项：CI 39481450456 的 Windows 离线安装测试在首次 PowerShell 验包时触发 20 秒超时（ETIMEDOUT），打包成功；仅为完整验包设置 120 秒上限，二进制冒烟保持 20 秒，不重试、不跳过校验。9aa64cc 的 CI 39482454535 全部 success（含 Windows 离线与 Linux foundation/PG/race/e2e），原四个提交已闭环；本地安装回归 m3-ci-offline-timeout.log 退出 0。后续 CI 结果见下方条目。
 
@@ -15,7 +15,9 @@
 - 第 3 项生命周期：已实现 state/PKCE 会话、换取/刷新前持久意图、未知结果拒绝、本地先撤销、Reader 读取前解析与结束前版本检查，并接显式 use_oauth 来源/启动配置；静态 Token 模式保留，混用拒绝。合成 HTTP＋真实 PG 覆盖重建对象、刷新、密钥轮换、持久撤销、错误身份、并发刷新、读取中撤销及未授权启动拒绝。定向 PG/来源回归退出 0（m3-oauth-lifecycle-db-final.log），pnpm check:go 退出 0（m3-oauth-lifecycle-go.log）。首轮合成撤销夹具缺 Content-Type 导致 SDK 拒绝，修正夹具后通过，失败保留于 m3-oauth-lifecycle-db.log。无新 schema 变化，未重复全量 test:db；PG 残留 0、专用集群已停止。
 - 第 3 项已完成无人值守范围：agentos --oauth 从有界 stdin JSON 提供 begin/complete/status/revoke/confirm-provider-revoked，不启动 Worker/HTTP，不在参数/错误中回显授权码；仅管理可信配置中的 use_oauth 用户，依赖本地管理员配置/数据库/密钥权限，并保留当前 IAM。schema 24 的人工核对绑定版本和证据摘要、原子追加审计，只解除 revoked 的未知标记，不恢复旧 Token。真实 PG 管理入口、失败/过期/撤销/并发/未知不重放/轮换/审计失败测试通过；pnpm check 与完整 pnpm test:db 均退出 0（m3-oauth-admin-check.log、m3-oauth-admin-db.log）。构建后二进制实际拒绝混用字段且无授权码回显；PG 残留 0、专用集群已停止。协议/状态/配置单点见 contracts/feishu-docs.md 和 deploy/feishu.md。该片使用 PG schema 24、SQLite 8；真实租户联调仍未执行。
 - 第 7 项：schema 25 将知识事件/检索审计读写 RLS 分离，新增 knowledge.audit.read 和只写访问留痕。提供有界时间窗口、稳定游标分页和读取检查/检索/候选计数；独立授权不授予正文或同步能力。真实 PG 与 HTTP 覆盖现有写入/读取、跨租户/应用、边界/游标、能力/身份撤销、请求身份注入与留痕失败无结果。完整 pnpm test:db、pnpm check:go 均退出 0（E:/agent-project/.tools/m3-knowledge-report-db.log、m3-knowledge-report-go.log）；测试库/角色残留 0、PG 已停止。契约单点 contracts/knowledge.md；当前 PG schema 25、SQLite 8。顺带修正知识契约的“原生同步未实现”和运维部署的历史 schema 9 指引，未把文档修订称为产品测试。
-- 后续 CI：2e63847、813e982、6f98834、a4a1d51、f03ebd6、2f56845 均 success，对应 39483392615/39483950043/39485157171/39486243295/39487558321/39488759453。下一片推进第 8 项 SBOM/多平台验包，再处理联合恢复、文档 Worker/PDF、中文评测、用章策略与运维脚本；总目标未完成。
+- 后续 CI：2e63847、813e982、6f98834、a4a1d51、f03ebd6、2f56845、9eadf4f 均 success，对应 39483392615/39483950043/39485157171/39486243295/39487558321/39488759453/39489992552。下一片处理第 5 项联合备份恢复，再处理文档 Worker/PDF、中文评测、用章策略与运维脚本；总目标未完成。
+
+- 第 8 项：R19、A10、V15；新增 CycloneDX 1.6 SBOM，固定上游 schema 离线验证，包含实际链接 Go 模块、运行时、前端生产依赖保守超集和二进制摘要，不虚构依赖图或将 Go h1 当归档 SHA-256。显式 Windows/Linux amd64、CGO=0 构建，Windows 到 Linux 交叉包在 WSL 实际执行核对身份。两个平台独立安装、迁移/备份/恢复、静态资源与拒绝反例通过；Linux 另测符号链接拒绝。证据 E:/agent-project/.tools/m3-linux-sbom-package-final.log、m3-linux-sbom-install.log、m3-windows-sbom-package.log、m3-windows-sbom-install.log，均退出 0；pnpm check 退出 0（m3-sbom-cross-check-final.log）。初次打包循环变量遮蔽和 Python 行宽检查失败均修复，原失败日志保留。产物 m3-linux-sbom-package-final（130 文件/56 依赖）和 m3-windows-sbom-package（132/58）基于 9eadf4f 工作树、modified=true，仅内部验收；schema 未变，无 SQL 改动，未重复 test:db。Linux 验包器需系统 Python 3.10+，Go 二进制不依赖它。CI 增加 Linux 原生打包与安装；该片远端结果待跟进。签名、项目发行许可与完整 PG/Python 包不在完成范围。
 
 ## 定位当前里程碑
 

@@ -64,6 +64,8 @@ jobs:
           python-version: '3.13'
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - run: pnpm package:offline "$RUNNER_TEMP/agentos-linux-offline" linux-amd64
+      - run: python3 scripts/test-offline-linux.py "$RUNNER_TEMP/agentos-linux-offline"
       - run: bash deploy/postgres/backup-errors.test.sh
       - run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f deploy/postgres/roles.sql
         env:

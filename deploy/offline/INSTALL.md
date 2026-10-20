@@ -15,7 +15,7 @@
 
 ## 内容与许可证据
 
-MANIFEST.json 枚举交付文件及 SHA-256。DEPENDENCIES.json 记录二进制实际链接的 Go 模块、模块校验和、Go 运行时和前端生产依赖集合；licenses/ 保留上游许可、NOTICE 和版权原文。前端集合可能大于最终打包代码，不宣称精确到 tree-shaking 后的组成，也不是正式 SPDX/CycloneDX SBOM。
+MANIFEST.json 枚举交付文件及 SHA-256。DEPENDENCIES.json 记录二进制实际链接的 Go 模块、模块校验和、Go 运行时和前端生产依赖集合；licenses/ 保留上游许可、NOTICE 和版权原文。SBOM.cdx.json 提供经 CycloneDX 1.6 schema 校验的组件清单及二进制摘要。前端集合可能大于最终打包代码，不宣称精确到 tree-shaking 后的组成或未知的传递依赖关系；Go h1 保留为模块校验和属性。SBOM 不等于签名或发行许可。
 
 包不包含 PostgreSQL 服务/扩展、Python 运行时/wheel、模型、客户数据、凭证或工具安装器。知识/向量、技能/工具、报价与审批通知不属于 SQLite 首版范围。现有仓库没有项目级 LICENSE；上游许可收集不替代本项目发行许可或对外发布审查。本包仅标记为 internal-validation-only。
 

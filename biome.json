@@ -6,6 +6,7 @@
       "packages/**",
       "contracts/**",
       "scripts/**",
+      "!scripts/vendor/**",
       "tests/**",
       "*.mjs",
       "*.json",

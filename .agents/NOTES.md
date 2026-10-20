@@ -2,6 +2,13 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 10 项库层范围完成：schema 26 的 PDF 预留/ready、独立发布授权、当前审批资格、对象回读摘要和原子文档审计；同版本只获得一次生成资格，未知不重试。完整 pnpm check、最终 check:go、全量 test:db、最后 TestQuoteDocument（含跨应用 RLS）均退出 0，日志 m3-pdf-ledger-check/final-go/full-db/final-targeted.log。测试库/角色残留 0，专用 PG 已停止。用章仅设计于 contracts/quotation.md，真实对象存储/外发/印章未接入；第 13 项模型仍待实施。
+- 第 12 项进行中：新增 retrievaleval/CLI 与 8 文档、6 查询合成中文语料；字符二元组基线 Recall@3=0.616667、过滤后=0.8、越权=0，分母差异和同义漏召回见 contracts/retrieval-evaluation.md。单元测试和 CLI 已运行；最后新增的评测输入隔离仍需复验。pg_search/BM25 保持候选，未安装或标记支持。
+
+- PDF 账本负例补片：原审批人当前映射/task.approve、发布人 quotation.publish、批准 response 与结构化稿摘要均重验；预留和 ready 的审计失败均回滚，PG 定向测试通过（m3-pdf-ledger-negative.log）。完整 pnpm check 退出 0（m3-pdf-ledger-check.log）；追加应用 RLS 与文件读取审计后 pnpm check:go 退出 0（m3-pdf-ledger-final-go.log）。全量 pnpm test:db 仍在运行（会话 17437，m3-pdf-ledger-full-db.log），之后须再跑 TestQuoteDocument 以覆盖最后追加的跨应用 RLS 断言；不可因观察超时重启该全量进程。schema 26 尚未提交。
+
+- 第 10 项持久账本进行中：未提交 schema 26 增加 quote_documents/quote_document_events，独立 quotation.publish 授权与 reserved/ready 状态；同版本仅一次预留，未知结果拒绝自动重生成，复用前后重验权限和对象摘要。真实 PG 的并发单次预留、Store 重建、实际中文字体 PDF 生成复用及对象篡改测试通过（m3-pdf-ledger-db-final.log、m3-pdf-ledger-all.log）。初轮复用任务审计触发 audit_step_version 唯一约束，已改独立文档事件，不改任务步骤；失败日志 m3-pdf-ledger-db.log 保留。待补撤权/版本/审计回滚反例和完整回归，不宣称本项完成。PG 残留 0，专用集群仍开启供后续测试。渲染切片 a3fb673 已推送，pnpm check:go 退出 0（m3-quotation-pdf-go.log）。
+
 - 第 10 项进行中：Go gopdf v0.38.2（MIT）实现固定字体/版式摘要、中文嵌入与确定金额展示，复用 quotation.Verify；缺字拒绝，不使用上游默认空格替换。合成中文 PDF 已由 Poppler 渲染检查，无缺字/裁切；测试字体为 OFL Noto Sans SC 固定来源裁剪，来源/摘要/许可见 quotation/testdata。PDF 正例、内容篡改、缺字、字体摘要与取消测试通过；同版本单次生成持久账本、发布授权与用章策略尚未实现，不声明第 10 项完成。样张仅 .tools/quotation-synthetic.pdf，无真实客户或印章。
 
 - 第 11 项无人值守库层范围已完成：真实 gRPC 并发繁忙、客户端取消、32 KiB 消息限制和执行版本/租约/截止时间负例；真实 PDF 文本、中文 DOCX、101 页、归档展开和输出超限验证通过。pnpm check:python 退出 0，38 项测试（m3-python-rpc-boundaries.log）；完整 pnpm check 退出 0（m3-python-full-check.log），含构建、前端/Go/Python 检查与制品冒烟；无数据库/schema 变化，未重跑 PG。没有可信隔离提供方，CLI 继续拒绝；真实对象存储/Go 任务消费者和容器隔离不在本次库层完成声明内。下一项进入正式报价 PDF 与用章库。用户指定的到期重置卡已在额度剩余 1% 时成功使用，查询已用 0%、剩余卡 2，不再重复兑换。

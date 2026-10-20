@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 未知结果人工核对（2026-10-20）
+## 当前切片：SQLite 任务清单与统计（2026-10-20）
+
+- 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-sqlite-reports。
+- 实现：R15/R18、A03/A08/A10、V06/V13；ListTasks/Stats 同事务当前授权、范围筛选和访问留痕；schema 8 保留旧记录并增加 tasks/stats 范围与分页索引。时间边界与更新时间口径见 [运维契约](../contracts/operations.md#sqlite-任务清单与统计)。PG 仅公开复用窗口校验，schema 22 未变。
+- 定向证据：共享 PG/SQLite 分页、窗口、范围、审批统计、撤权与留痕失败契约通过（`E:/agent-project/.tools/m3-sqlite-reports-db-final.log`）。初轮夹具以 time.Time == 比较时区、以纳秒比较 PG 微秒参数均已修正；SQLite 独立测试覆盖纳秒边界转换。
+- 工程检查：首次 pnpm check 因 database.go 换行格式未过 gofmt 已修复，保留失败日志 m3-sqlite-reports-check.log；最终 `pnpm check` 退出 0（m3-sqlite-reports-check-final.log），包含 schema 升级保留与写锁回归；未重复全量 test:db。测试库/角色残留 0，PG 已停止。
+- 下一片：梳理运行入口需要的最小存储接口与不支持能力拒绝，再接 SQLite 基础文本任务/审批/审计/身份路径；不得为了接线伪装已支持技能、工具、通知或知识/向量。
+- 远端：facc89e 的 CI 39417806357/39417769893 仍 in_progress；本片远端待确认。
+
+## 保留切片：SQLite 未知结果人工核对（2026-10-20）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-sqlite-reconcile；原目录历史副本不作验证依据。
 - 实现：R03/R06、A03/A04/A08、V03/V05/V06；schema 7 增加核对账本，当前操作员授权、证据/版本校验、状态/审计/账本同事务；重复请求返回首次结果，恢复后旧租约拒写。规范见 [任务契约](../contracts/task-runtime.md#sqlite-未知结果人工核对)。PG 仅抽取共享输入验证，schema 22 不变。

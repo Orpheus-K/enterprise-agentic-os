@@ -46,7 +46,7 @@ type TaskStats struct {
 	Approvals map[string]int64 `json:"approvals"`
 }
 
-func (w ReportWindow) validate() error {
+func (w ReportWindow) Validate() error {
 	if w.From.IsZero() || !w.To.After(w.From) || w.To.Sub(w.From) > MaxReportWindow {
 		return ErrInvalidReport
 	}
@@ -64,7 +64,7 @@ func (s *Store) recordRead(ctx context.Context, q database.Queries, scope string
 // page rather than an error, so cursors cannot probe for other tenants' or apps' tasks.
 func (s *Store) ListTasks(ctx context.Context, external identity.ExternalIdentity, w ReportWindow, after uuid.UUID, limit int) (TaskPage, error) {
 	page := TaskPage{Tasks: []TaskSummary{}}
-	if err := w.validate(); err != nil || limit < 1 || limit > 100 {
+	if err := w.Validate(); err != nil || limit < 1 || limit > 100 {
 		return TaskPage{}, ErrInvalidReport
 	}
 	err := s.Operation(ctx, external, "audit.read", func(q database.Queries) error {
@@ -105,7 +105,7 @@ func (s *Store) ListTasks(ctx context.Context, external identity.ExternalIdentit
 
 // Stats aggregates only recorded facts; it does not estimate labour or value.
 func (s *Store) Stats(ctx context.Context, external identity.ExternalIdentity, w ReportWindow) (TaskStats, error) {
-	if err := w.validate(); err != nil {
+	if err := w.Validate(); err != nil {
 		return TaskStats{}, err
 	}
 	out := TaskStats{From: w.From, To: w.To, ByState: map[string]int64{}, Approvals: map[string]int64{}}

@@ -3,7 +3,14 @@
 ## 定位当前里程碑
 
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，本机验证）。M3 整体尚未退出。
-- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④原生来源连接器待实现 ⑤会话检索本机验证完成，远端 CI 待确认 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书 docx 原始读取器已实现，持久同步待实现 ⑤会话检索远端 CI 通过 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+
+## 当前切片：飞书 docx 读取器（2026-10-20）
+
+- 实现：R02/R10/R12、A06/A08、T08/T09、V07/V08 的来源读取边界；`internal/feishudocs` 显式绑定用户凭证，固定版本分页，前后重验身份与权限，拒绝坏游标、不完整块树和超限。只返回完整原始快照，不发布 ACL；单点契约见 [飞书文档](../contracts/feishu-docs.md)。
+- 判断：原生权限检查针对当前 token；应用可读或协作者列表不能直接成为员工 ACL。AppID 为可信配置绑定，userinfo 核对 OpenID/TenantKey。未知块保留原始对象，后续解析须显式支持或拒绝。
+- 本机证据：`pnpm check` 退出 0，含读取器合成 HTTP 测试，日志 `.tools/m3-feishu-docs-reader-check.log`。无 SQL/数据库变更，本片未重复运行 test:db；未真实租户联调，Windows 无 gcc，Linux race 待本片远端 CI。
+- 下一片：先实现显式支持的 docx 块规范化及稳定锚点，再设计可信 IAM/用户凭证映射与持久同步，在原生撤权和来源不可用时阻断旧引用；完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 
@@ -11,7 +18,7 @@
 - 守住交付：模型前续租、工具/发送意图在任务锁后用同一事务重验当前身份及全部引用；审批查看、决定、改单和通知另验审批人的知识权限。未知嵌入不自动重放；审计/数据库错误显式失败，不当作无资料。群聊仍由渠道拒绝。
 - 证据：最终生产代码 `pnpm check`、`pnpm test:db` 均退出 0（`.tools/m3-retrieval-runtime-final-check.log`、`m3-retrieval-runtime-final-db.log`）；启动/配置/撤权/恢复/审批/工具定向日志 `m3-retrieval-runtime-targeted.log`。后补报价贯穿用例 `go test -tags=integration -count=1 -run '^TestQuoteMessageToolApprovalAmendDelivery/retrieval' -v ./internal/feishu` 通过（`m3-retrieval-quote.log`），覆盖来源进入工具报价、改单后批准交付及撤权拒绝改单。均为合成来源、模型/MCP/发送替身。
 - 保留反例：续租锁等待期间撤权的测试先失败（旧代码返回 nil），补锁后重验后通过；日志 `m3-retrieval-renew-before.log`、`m3-retrieval-renew-after.log`。最终全量在该生产修复后执行。
-- 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；Windows 无 gcc，Linux race 需远端 CI。工作分支 `codex/m3-conversation-retrieval`，本片远端结果尚未确认。
+- 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；a72d34a 的 [PR CI 39388783955](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388783955) 与 [push CI 39388741561](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388741561) 均 completed/success。工作分支 `codex/m3-conversation-retrieval`，草稿 PR #1。
 - 下一片：核实飞书云文档权限语义、版本/游标恢复及撤回信号，完成受控来源连接器与向量发布；不得以应用 Token 可读推导全员 ACL。真实租户/模型联调、中文召回质量、群聊接收范围及 M3 其余退出项仍待独立验收；SQLite 未启动重写。
 
 ## SQLite 差距清单（未实现，需决策）

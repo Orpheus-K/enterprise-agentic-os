@@ -24,4 +24,4 @@
 
 PostgreSQL 和 SQLite 共用 `conversation/contracttest.RunInbox`：覆盖并发投递、实例重建、事件与消息交叉冲突、租户/应用隔离、停用/改绑和审计失败。SQLite 测试使用独立文件连接，迁移从身份 schema 1 升到 2 并保留原数据。
 
-SQLite 基础认领、文本任务状态推进及原响应审批见 [任务契约](task-runtime.md#sqlite-基础文本任务租约)。通知、技能授权、人工核对与查询入口仍待实现；不得接入真实渠道确认消息。后续补全执行存储及能力检查后才能开放轻量部署，知识/向量启用仍须启动拒绝。
+SQLite 基础认领、文本任务状态推进及原响应审批见 [任务契约](task-runtime.md#sqlite-基础文本任务租约)。渠道、Worker、运维审批/核对与查询已接入，启动选择和未支持能力拒绝以 [SQLite 部署](../deploy/sqlite/README.md#选择运行存储)为准。真实飞书租户联调仍待完成。

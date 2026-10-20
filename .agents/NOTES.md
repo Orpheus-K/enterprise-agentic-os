@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：运维存储接口（2026-10-21）
+## 当前切片：SQLite 显式运行入口（2026-10-21）
+
+- 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-operations-storage`；主目录只保留入口笔记，不作受测制品。
+- 范围：R01/R02/R03/R04/R06/R19、A03/A04/A08/A10、V03/V05/V06/V11/V15；bootstrap 显式选择 SQLite 文件，缺库/未迁移/错误 schema 拒绝。启动前拒绝知识/向量/来源、技能、工具、报价和审批通知配置；共享接收、Worker 与运维处理器，SQLite 不注入通知发送器或知识仓储。运行配置单点见 [SQLite 部署](../deploy/sqlite/README.md#选择运行存储)。
+- 行为证据：真实 SQLite 文件、合成加密渠道消息和 HTTP 模型完成原响应审批挂起、重启、运维查看/批准、单次交付；审批人能力撤销与发送者映射撤销均阻断交付。就绪探针核对租户启用/schema，关闭后不可用。日志 E:/agent-project/.tools/m3-sqlite-bootstrap-targeted-final.log；首轮测试夹具 URL 未含 /chat/completions，失败记录保留于 m3-sqlite-bootstrap-targeted.log，已纠正夹具并补启动失败来源断言。
+- 工程证据：pnpm check 与全量 pnpm test:db 均退出 0，日志 E:/agent-project/.tools/m3-sqlite-bootstrap-check.log、m3-sqlite-bootstrap-db.log 均保存 EXIT_CODE=0；覆盖 PG 启动/检索/来源及审批、通知、工具、报价与双驱动契约。测试库/角色残留 0，专用 PG 集群已停止。schema 未变（PG 22、SQLite 8）。
+- 交付边界：首版仅基础文本任务/原响应审批/身份/审计/核对/统计；真实飞书租户、群聊接收范围、OAuth 生命周期、正式 PDF/用章仍未验收；M3 未退出。Windows 未运行 race；本片尚未推送，远端 CI 未运行。
+- 下一片：离线安装制品清单、依赖许可与安装验证，再做 SQLite 备份恢复演练；按实际证据维护 M3 退出差距，不自动声称完整轻量部署交付完成。
+
+## 保留切片：运维存储接口（2026-10-21）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-operations-storage。
 - 收口范围：本轮完成运维接口验证、提交与工作目录统一；SQLite 启动入口是下一独立切片，不将 M3 标成退出。主目录旧改动已存入 stash ed1383291645d5e392d0649183a290d228ffc8ac；逐文件核对发现 database.go 为 schema 1/缺 immediate 的异常旧版本，未带入受测目录。主目录笔记已改为指向本页的入口。

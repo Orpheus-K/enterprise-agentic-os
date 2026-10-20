@@ -1,6 +1,6 @@
 # 准备 SQLite 轻量数据库
 
-对齐 R19、A03/A10、V15。当前提供显式迁移命令与领域仓储；共享 Worker 与运维 HTTP 处理器已适配；渠道启动配置尚未接入 SQLite，不能据此启用真实渠道。
+对齐 R01/R02/R03/R04/R06/R19、A03/A04/A08/A10、V03/V05/V06/V11/V15。SQLite 已接入显式启动配置、共享渠道 Worker 和运维 HTTP；首版仅支持基础文本任务、原响应审批、身份、审计、人工核对与统计。真实飞书租户联调仍待完成。
 
 ## 执行离线迁移
 
@@ -20,4 +20,23 @@ agentos-migrate --sqlite <绝对数据库文件路径>
 
 ## 能力边界
 
-任务、原响应审批、人工核对、审计查询与身份库的契约分别见 [任务](../../contracts/task-runtime.md)、[运维](../../contracts/operations.md)、[身份](../../contracts/identity.md)。知识/向量、技能、工具、报价及审批通知尚未支持；运行入口开放前必须实现明确的配置拒绝。完整 SQLite 备份恢复命令与离线安装包仍待完成。
+任务、原响应审批、人工核对、审计查询与身份库的契约分别见 [任务](../../contracts/task-runtime.md)、[运维](../../contracts/operations.md)、[身份](../../contracts/identity.md)。知识/向量、技能、工具、报价及审批通知尚未支持。完整 SQLite 备份恢复命令与离线安装包仍待完成。
+
+## 选择运行存储
+
+在既有[渠道配置](../feishu.example.json)中设置 `storage_driver: "sqlite"` 和 `sqlite_path`（绝对文件路径），删除 `database_url_env`；其他渠道认证、模型与运维配置不变。省略 `storage_driver` 或显式设置 `"postgres"` 保持 PostgreSQL 路径；未知驱动、双目标配置及 PostgreSQL 配置携带 SQLite 路径均拒绝。
+
+例如渠道配置的存储字段为：
+
+```json
+{
+  "storage_driver": "sqlite",
+  "sqlite_path": "E:/agentos/runtime.db"
+}
+```
+
+以上仅为字段示例，不是完整配置。将完整配置文件路径放入 `AGENTOS_CHANNEL_CONFIG` 后运行 `agentos`。启动仅打开现存且 schema 匹配的文件；缺库、空库、旧版或未来 schema 均失败，不自动迁移。管理员须事先按身份契约配置租户、成员、渠道映射、运维身份映射及应用能力授权；迁移成功不代表已配置身份。
+
+SQLite 配置中出现 `embedding`、`retrieval`、非空 `sources`、`skills`、`tools`、非空 `quotation_wasm_sha256` 或 `approval.notify_subject` 时，在读取凭证或打开数据库之前拒绝。原响应审批可用，但必须配置运维入口，由有权操作员查看和决定；不发送审批通知。知识、报价和通知运维路由不提供。
+
+就绪探针实时核对当前租户启用状态和 SQLite schema，并结合渠道连接及 Worker 状态；数据库关闭后不可就绪。进程正常关闭和启动失败均释放已打开的数据库资源。运行验证使用真实 SQLite 文件、合成加密渠道事件、模拟模型和发送器，覆盖审批前后重启、单次交付与撤权阻断；不代表真实租户现场验收或完整 M3 退出。

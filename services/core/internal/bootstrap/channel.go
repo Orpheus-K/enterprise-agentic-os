@@ -10,9 +10,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"agentos.local/core/internal/conversation"
+	conversationsqlite "agentos.local/core/internal/conversation/sqlite"
 	"agentos.local/core/internal/database"
 	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/health"
@@ -21,12 +23,15 @@ import (
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/operations"
 	"agentos.local/core/internal/quotation"
+	"agentos.local/core/internal/sqlitedb"
 	"agentos.local/core/internal/telemetry"
 	"agentos.local/core/internal/toolgateway"
 	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
+	StorageDriver        string                        `json:"storage_driver,omitempty"`
+	SQLitePath           string                        `json:"sqlite_path,omitempty"`
 	QuotationWASMSHA256  string                        `json:"quotation_wasm_sha256,omitempty"`
 	Tools                *ToolsConfig                  `json:"tools,omitempty"`
 	Skills               *SkillsConfig                 `json:"skills,omitempty"`
@@ -58,6 +63,21 @@ func Parse(raw []byte) (Config, error) {
 	if decoder.Decode(new(any)) != io.EOF {
 		return c, errors.New("unexpected trailing configuration")
 	}
+	switch c.StorageDriver {
+	case "", "postgres":
+		if c.SQLitePath != "" || c.DatabaseURLEnv == "" {
+			return c, errors.New("PostgreSQL requires database_url_env and forbids sqlite_path")
+		}
+	case "sqlite":
+		if !filepath.IsAbs(c.SQLitePath) || c.DatabaseURLEnv != "" {
+			return c, errors.New("SQLite requires an absolute sqlite_path and forbids database_url_env")
+		}
+		if c.Embedding != nil || c.Retrieval != nil || len(c.Sources) != 0 || c.Skills != nil || c.Tools != nil || c.QuotationWASMSHA256 != "" || (c.Approval != nil && c.Approval.NotifySubject != "") {
+			return c, errors.New("SQLite does not support knowledge, vectors, skills, tools, quotations or notifications")
+		}
+	default:
+		return c, errors.New("unsupported storage_driver")
+	}
 	if err := c.Binding.Validate(); err != nil {
 		return c, err
 	}
@@ -83,8 +103,8 @@ func Parse(raw []byte) (Config, error) {
 	if c.Mode != "websocket" && c.Mode != "webhook" {
 		return c, errors.New("channel mode must be websocket or webhook")
 	}
-	if c.DatabaseURLEnv == "" || c.AppSecretEnv == "" {
-		return c, errors.New("database and app-secret environment references required")
+	if c.AppSecretEnv == "" {
+		return c, errors.New("app-secret environment reference required")
 	}
 	if c.Mode == "webhook" && (c.VerificationTokenEnv == "" || c.EncryptKeyEnv == "") {
 		return c, errors.New("webhook authentication references required")
@@ -131,7 +151,7 @@ func secret(name string) (string, error) {
 }
 
 type Channel struct {
-	db              *database.DB
+	closeStorage    func()
 	adapter         *feishu.Adapter
 	worker          *conversation.Worker
 	mode, appSecret string
@@ -149,10 +169,6 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		return nil, errors.New("cannot read channel configuration")
 	}
 	c, err := Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	dbURL, err := secret(c.DatabaseURLEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -191,19 +207,48 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	}
 	openCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	db, err := database.Open(openCtx, dbURL, 4)
-	if err != nil {
-		return nil, errors.New("channel database startup failed")
+	var db *database.DB
+	var store channelStore
+	var closeStorage func()
+	if c.StorageDriver == "sqlite" {
+		sqliteDB, openErr := sqlitedb.Open(openCtx, c.SQLitePath)
+		if openErr != nil {
+			return nil, errors.New("channel SQLite database startup failed; require an existing migrated file")
+		}
+		closeStorage = func() {
+			if err := sqliteDB.Close(); err != nil {
+				logger.Error("SQLite shutdown failed")
+			}
+		}
+		sqliteStore := conversationsqlite.NewInbox(sqliteDB, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+		if c.Approval != nil {
+			sqliteStore, err = sqliteStore.WithApproval(*c.Approval)
+			if err != nil {
+				closeStorage()
+				return nil, err
+			}
+		}
+		store = sqliteStore
+	} else {
+		dbURL, secretErr := secret(c.DatabaseURLEnv)
+		if secretErr != nil {
+			return nil, secretErr
+		}
+		db, err = database.Open(openCtx, dbURL, 4)
+		if err != nil {
+			return nil, errors.New("channel database startup failed")
+		}
+		closeStorage = db.Close
 	}
 	tel, err := telemetry.New(logger)
 	if err != nil {
-		db.Close()
+		closeStorage()
 		return nil, err
 	}
 	opened := false
 	defer func() {
 		if !opened {
-			db.Close()
+			closeStorage()
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := tel.Close(cleanup); err != nil {
@@ -212,71 +257,79 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		}
 	}()
 	// Bind queued work to installation and approved model configuration, independent of transport mode.
-	store := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
-	if c.QuotationWASMSHA256 != "" {
-		store, err = store.WithQuotationSandbox(c.QuotationWASMSHA256)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if c.Retrieval != nil {
-		store, err = store.WithRetrieval(*c.Retrieval, embedder)
-		if err != nil {
-			return nil, err
-		}
-		k, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
-		if err != nil {
-			return nil, err
-		}
-		if err := db.Transaction(ctx, func(q database.Queries) error {
-			return k.CheckSpaceIn(ctx, q, c.Retrieval.Space, c.Embedding.Dimensions)
-		}); err != nil {
-			return nil, errors.New("retrieval embedding space unavailable or inconsistent")
-		}
-	}
-	if c.Approval != nil {
-		store, err = store.WithApproval(*c.Approval)
-		if err != nil {
-			return nil, err
-		}
-	}
 	var gateway *toolgateway.Gateway
-	if c.Skills != nil {
-		registry, loadErr := c.Skills.Load()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		if c.Tools != nil {
-			credentials, credentialErr := toolgateway.NewCredentials(c.Tools.Credentials)
-			if credentialErr != nil {
-				return nil, credentialErr
-			}
-			gateway, err = toolgateway.New(db, c.Binding.TenantID, c.Binding.AppID, registry, c.Tools.Specs, credentials)
+	if db != nil {
+		pgStore := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+		if c.QuotationWASMSHA256 != "" {
+			pgStore, err = pgStore.WithQuotationSandbox(c.QuotationWASMSHA256)
 			if err != nil {
 				return nil, err
 			}
 		}
-		if len(c.Skills.Routes) > 0 {
-			store, err = store.WithRoutes(registry, c.Skills.Routes)
-		} else {
-			store, err = store.WithSkills(registry, c.Skills.Selected)
+		if c.Retrieval != nil {
+			pgStore, err = pgStore.WithRetrieval(*c.Retrieval, embedder)
+			if err != nil {
+				return nil, err
+			}
+			k, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+			if err != nil {
+				return nil, err
+			}
+			if err := db.Transaction(ctx, func(q database.Queries) error {
+				return k.CheckSpaceIn(ctx, q, c.Retrieval.Space, c.Embedding.Dimensions)
+			}); err != nil {
+				return nil, errors.New("retrieval embedding space unavailable or inconsistent")
+			}
 		}
-		if err != nil {
-			return nil, err
+		if c.Approval != nil {
+			pgStore, err = pgStore.WithApproval(*c.Approval)
+			if err != nil {
+				return nil, err
+			}
 		}
+		if c.Skills != nil {
+			registry, loadErr := c.Skills.Load()
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if c.Tools != nil {
+				credentials, credentialErr := toolgateway.NewCredentials(c.Tools.Credentials)
+				if credentialErr != nil {
+					return nil, credentialErr
+				}
+				gateway, err = toolgateway.New(db, c.Binding.TenantID, c.Binding.AppID, registry, c.Tools.Specs, credentials)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if len(c.Skills.Routes) > 0 {
+				pgStore, err = pgStore.WithRoutes(registry, c.Skills.Routes)
+			} else {
+				pgStore, err = pgStore.WithSkills(registry, c.Skills.Selected)
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		store = pgStore
 	}
 	adapter, err := feishu.New(c.Binding, token, key, store, tel)
 	if err != nil {
 		return nil, err
 	}
 	adapter = adapter.WithApprovals(store)
-	channel := &Channel{db: db, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
-	channel.sources, err = c.openSources(ctx, db, preparedSources)
-	if err != nil {
-		return nil, err
+	channel := &Channel{closeStorage: closeStorage, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
+	if db != nil {
+		channel.sources, err = c.openSources(ctx, db, preparedSources)
+		if err != nil {
+			return nil, err
+		}
 	}
 	sender := feishu.NewSender(c.Binding.AppID, appSecret, logger)
-	channel.worker = &conversation.Worker{Notifier: sender, Store: store, Tools: gateway, Model: modelClient, Sender: sender, Logger: logger, Telemetry: tel}
+	channel.worker = &conversation.Worker{Store: store, Tools: gateway, Model: modelClient, Sender: sender, Logger: logger, Telemetry: tel}
+	if db != nil {
+		channel.worker.Notifier = sender
+	}
 	if c.Mode == "webhook" {
 		channel.Handler, err = adapter.Webhook()
 		if err != nil {
@@ -292,17 +345,20 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		if err != nil {
 			return nil, err
 		}
-		knowledgeStore, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
-		if err != nil {
-			return nil, err
+		channel.Operations = operationsAPI
+		if db != nil {
+			knowledgeStore, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+			if err != nil {
+				return nil, err
+			}
+			channel.Operations = operationsAPI.WithKnowledge(knowledgeStore)
 		}
-		channel.Operations = operationsAPI.WithKnowledge(knowledgeStore)
 	}
 	opened = true
 	return channel, nil
 }
 func (c *Channel) Close() {
-	c.db.Close()
+	c.closeStorage()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := c.telemetry.Close(ctx); err != nil {
@@ -332,4 +388,11 @@ func (c *Channel) Run(ctx context.Context) error {
 type ToolsConfig struct {
 	Specs       []toolgateway.Spec              `json:"specs"`
 	Credentials []toolgateway.CredentialBinding `json:"credentials"`
+}
+
+type channelStore interface {
+	conversation.ExecutionStore
+	operations.Store
+	feishu.Inbox
+	Ready(context.Context) error
 }

@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 显式运行入口（2026-10-21）
+## 当前切片：Windows SQLite 核心离线包（2026-10-21）
+
+- 范围：R19、A03/A10、V15；`pnpm package:offline <新绝对目录>` 重建前端和两个 Go 二进制，生成 MANIFEST.json、DEPENDENCIES.json、许可原文及 PowerShell 验包器；拒绝覆盖已有目录、无许可文本、模块替换/校验和不符、旧 revision 和错误平台。构建与安装单点见 [离线包](../deploy/offline/README.md)。
+- 制品：E:/agent-project/.tools/m3-offline-package-1；131 个交付文件、41 个 Go 链接模块＋1 项 Go 运行时＋16 个前端生产依赖。前端为保守集合，不宣称精确 SBOM；该验收包基于 e33b684 的工作树构建，modified=true，明确 internal-validation-only。项目未提供 LICENSE；不声明对外发行许可已完成。Python/PG 服务、模型、凭证和客户数据库不打包。
+- 验证：打包、`pnpm test:offline E:/agent-project/.tools/m3-offline-package-1`、`pnpm check` 均退出 0。日志 E:/agent-project/.tools/m3-offline-package.log、m3-offline-install-final.log、m3-offline-check-final.log。安装测试复制到独立目录，以空 PATH 启动二进制，覆盖原文件校验、篡改/缺失/额外文件拒绝、身份核对、SQLite 迁移/重复/目标冲突、嵌入资源、缺租户就绪拒绝和坏配置退出；无真实外发，不称为物理断网认证。
+- 保留失败：m3-offline-install.log 中测试副本继承 Go 缓存许可文件只读属性导致篡改夹具失败，已仅将测试副本设为可写；m3-offline-check.log 中导入排序已修正。Windows CI 增加 package/test 作业，尚未推送或远端运行。
+- 检查边界：没有运行时或 schema 变更，本片未重复全量 test:db；上一片数据库回归证据保留。M3 未退出，完整安装平台矩阵、服务注册、签名和正式 SBOM 仍未完成。
+- 下一片：SQLite 停写备份与恢复演练，检查数据库/现场配置/密钥联合恢复边界及失败处理，再汇总 M3 退出差距。
+
+## 保留切片：SQLite 显式运行入口（2026-10-21）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-operations-storage`；主目录只保留入口笔记，不作受测制品。
 - 范围：R01/R02/R03/R04/R06/R19、A03/A04/A08/A10、V03/V05/V06/V11/V15；bootstrap 显式选择 SQLite 文件，缺库/未迁移/错误 schema 拒绝。启动前拒绝知识/向量/来源、技能、工具、报价和审批通知配置；共享接收、Worker 与运维处理器，SQLite 不注入通知发送器或知识仓储。运行配置单点见 [SQLite 部署](../deploy/sqlite/README.md#选择运行存储)。

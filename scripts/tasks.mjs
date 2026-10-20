@@ -108,6 +108,13 @@ switch (task) {
     run("uv", ["lock", "--check"], compute);
     run("uv", ["build"], compute);
     break;
+  case "offline":
+    if (process.argv.length !== 4 || !path.isAbsolute(process.argv[3]))
+      throw new Error("pnpm package:offline <new absolute output directory>");
+    stageWeb();
+    buildCore();
+    run(process.execPath, ["scripts/package-offline.mjs", process.argv[3]]);
+    break;
   case "go":
     stageWeb();
     checkGo();

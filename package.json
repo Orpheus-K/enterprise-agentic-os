@@ -18,6 +18,8 @@
     "db:migrate": "node scripts/tasks.mjs migrate",
     "test": "vitest run",
     "build": "node scripts/tasks.mjs build",
+    "package:offline": "node scripts/tasks.mjs offline",
+    "test:offline": "node scripts/test-offline.mjs",
     "check": "node scripts/tasks.mjs check",
     "check:go": "node scripts/tasks.mjs go",
     "check:python": "node scripts/tasks.mjs python",

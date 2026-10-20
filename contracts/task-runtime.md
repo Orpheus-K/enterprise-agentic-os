@@ -84,7 +84,7 @@ schema 19 增加不可变会话引用检查点；字段、写入阶段、恢复�
 
 - SQLite 用 BEGIN IMMEDIATE 串行取得写权后再检查数据库时间，不模拟 PostgreSQL 的 SKIP LOCKED 行锁。90 秒租约、所有者/世代/版本/安装过滤、到期拒写以及每轮最多 100 条外部意图转 unknown 与 PG 一致。
 - 初始步骤版本为 1，认领递增；状态、响应和审计同事务，步骤审计唯一。迁移 schema 3 重建约束并保留 schema 2 的 pending 任务、正文和历史审计；须先停止旧制品再迁移。
-- 消费方在模型与发送前调用 Authorize，恢复重验当前映射；不将认领或续租视为授权。尚无 SQLite Worker 接线、技能、工具、人工核对或运维查询；禁止真实渠道启用。
+- 消费方在模型与发送前调用 Authorize，恢复重验当前映射；不将认领或续租视为授权。人工核对与单任务审计见下述契约；尚无 SQLite Worker 接线、技能、工具或运维 HTTP；禁止真实渠道启用。
 - PG/SQLite 共用 `conversation/contracttest.RunLeases`，验证并发认领、范围隔离、重启重领、过期/旧世代/旧版本拒写、响应复用、撤权、成功终态、未知意图不重放与审计故障回滚。此证据不代表完整轻量运行时验收。
 
 ## SQLite 原响应审批
@@ -94,3 +94,11 @@ schema 5 保存任务入队时的审批成员和期限，支持 WithApproval、S
 批准后任务恢复可认领的 delivery_pending；发送意图前再次验证批准、正文、期限和当前审批人映射/能力。拒绝与到期不能认领；到期扫描每次最多 100 条。审批记录、任务状态、步骤审计同事务；任何审计失败回滚。写事务取得锁后执行授权，SQLite 不模拟 PG 的 RLS。
 
 SQLite 的 NotifySubject 配置明确拒绝：审批通知、报价改单、飞书卡片和 HTTP 接线尚未移植；此库层验证不构成真实渠道验收。PG/SQLite 共用 `conversation/contracttest.RunApprovals`，覆盖独立实例并发重复决定、重启与取消策略后保持原审批、拒绝、越版本/摘要拒绝、撤权、内容变更、到期及挂起/读取/决定/到期审计故障；schema 4→5 迁移保留响应、租约、版本和历史事件。
+
+## SQLite 未知结果人工核对
+
+`conversation/sqlite.Inbox.InspectRecovery/Reconcile` 提供与 PostgreSQL 相同的基础文本任务核对库接口（R03/R06、A03/A04/A08、V03/V05/V06）。同一写事务复核当前身份及 task.reconcile 能力，严格限定租户、应用与执行 Revision；查看必须成功写入访问记录才返回状态。
+
+核对必须绑定请求 ID、当前版本和非空证据 ID。unresolved 保留 unknown；not_executed 仅允许模型意图回到 pending，或已有响应的发送意图回到 delivery_pending；delivered 仅允许发送意图转 succeeded。不会从超时推断外部结果。状态、步骤审计与 schema 7 核对账本原子提交；恢复认领后递增租约世代，拒绝旧执行者写入。
+
+同操作员、相同请求和参数重复提交返回首次结果；更换操作员或参数拒绝，重复请求仍复核当前授权。共享 `contracttest.RunReconciliation` 覆盖双连接并发、版本/证据/范围拒绝、撤权、响应复用、错误阶段及账本/步骤审计/访问留痕失败回滚。此接口尚未接入 SQLite HTTP 或 Worker，不包含工具及审批通知的未知结果核对。

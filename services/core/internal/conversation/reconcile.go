@@ -21,6 +21,19 @@ type Reconciliation struct {
 	Decision        string    `json:"decision"`
 	EvidenceID      uuid.UUID `json:"evidence_id"`
 }
+
+func (in Reconciliation) Validate() error {
+	if in.TaskID == uuid.Nil || in.RequestID == uuid.Nil || in.EvidenceID == uuid.Nil || in.ExpectedVersion < 1 {
+		return ErrInvalidReconciliation
+	}
+	switch in.Decision {
+	case "unresolved", "not_executed", "delivered":
+		return nil
+	default:
+		return ErrInvalidReconciliation
+	}
+}
+
 type RecoverySnapshot struct {
 	TaskID  uuid.UUID `json:"task_id"`
 	State   State     `json:"state"`
@@ -59,13 +72,8 @@ func (s *Store) InspectRecovery(ctx context.Context, actor identity.ExternalIden
 
 // Evidence is an operator attestation reference, never an assertion inferred by the model.
 func (s *Store) Reconcile(ctx context.Context, actor identity.ExternalIdentity, in Reconciliation) (RecoverySnapshot, error) {
-	if in.TaskID == uuid.Nil || in.RequestID == uuid.Nil || in.EvidenceID == uuid.Nil || in.ExpectedVersion < 1 {
-		return RecoverySnapshot{}, ErrInvalidReconciliation
-	}
-	switch in.Decision {
-	case "unresolved", "not_executed", "delivered":
-	default:
-		return RecoverySnapshot{}, ErrInvalidReconciliation
+	if err := in.Validate(); err != nil {
+		return RecoverySnapshot{}, err
 	}
 	var out RecoverySnapshot
 	err := s.Operation(ctx, actor, "task.reconcile", func(q database.Queries) error {

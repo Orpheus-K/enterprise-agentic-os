@@ -36,6 +36,7 @@ type Task struct {
 	Response            string
 }
 type Store struct {
+	quotationWASM bool
 	db            *database.DB
 	identities    *identitypg.Repository
 	tenant        uuid.UUID

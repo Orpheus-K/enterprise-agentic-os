@@ -18,11 +18,12 @@ func (c Config) executionRevision() string {
 		embedding = c.Embedding
 	}
 	raw, _ := json.Marshal(struct {
-		Binding   feishu.Binding
-		Model     model.Config
-		Retrieval *conversation.RetrievalPolicy `json:",omitempty"`
-		Embedding *model.EmbeddingConfig        `json:",omitempty"`
-	}{c.Binding, c.Model, c.Retrieval, embedding})
+		QuotationWASMSHA256 string `json:",omitempty"`
+		Binding             feishu.Binding
+		Model               model.Config
+		Retrieval           *conversation.RetrievalPolicy `json:",omitempty"`
+		Embedding           *model.EmbeddingConfig        `json:",omitempty"`
+	}{c.QuotationWASMSHA256, c.Binding, c.Model, c.Retrieval, embedding})
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }

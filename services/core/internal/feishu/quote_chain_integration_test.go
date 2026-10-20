@@ -22,9 +22,17 @@ import (
 )
 
 func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
-	for _, mode := range []string{"normal", "checkpoint_failure", "model_bypass", "revoked", "boundary", "retrieval", "retrieval_revoked_amend"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, name := range []string{"normal", "checkpoint_failure", "model_bypass", "revoked", "boundary", "retrieval", "retrieval_revoked_amend", "wasm_normal", "wasm_boundary", "wasm_checkpoint_failure"} {
+		t.Run(name, func(t *testing.T) {
+			mode := strings.TrimPrefix(name, "wasm_")
 			f := approvalEnvironment(t)
+			if strings.HasPrefix(name, "wasm_") {
+				var err error
+				f.store, err = f.store.WithQuotationSandbox(quotation.ApprovalModuleSHA256)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			var calls, models atomic.Int32
 			sdk := mcp.NewServer(&mcp.Implementation{Name: "synthetic-quotation-source", Version: "1"}, nil)
 			type Input struct {

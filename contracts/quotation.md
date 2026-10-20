@@ -61,3 +61,7 @@
 - 保留范围：文本初稿已可读，尚无正式 PDF、签章、审批通知或渠道卡片；这些能力不通过文案暗示已实现。
 
 证据：[文本精度与篡改测试](../services/core/internal/quotation/render_test.go)、[下载权限与读取审计测试](../services/core/internal/feishu/quotation_integration_test.go)；贯穿测试核对修改后的可读总额和版本。
+
+## 可选 WASM 折扣复核
+
+安装显式配置 `quotation_wasm_sha256` 才启用[沙箱规则](sandbox.md#固定折扣规则模块wasm)。标准价、金额总和及草稿完整性仍走本契约；新稿保存和改单均须额外通过固定 WASM 规则，任何失败阻断持久化，不静默改用宿主结果。模块摘要绑定任务执行版本，旧审批、恢复和改单不能换用另一配置。未启用时保持既有整数核算。

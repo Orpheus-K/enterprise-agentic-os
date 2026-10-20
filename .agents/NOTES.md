@@ -148,3 +148,15 @@
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
 - 当前工作树制品要求 schema 22；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+
+## M3 WASM 折扣规则模块（2026-10-20）
+
+- 范围：R13/R14、A09、V09；增加纯整数 approval.wat/wasm 与 quotation.ApprovalInSandbox，固定摘要、独立运行时、1 秒/1 页限额；商余数算法避免 MaxMinor×基点溢出。宿主与模块各自拒绝非法输入，结果仅 0/1。WABT 1.0.34 构建；生产 Go 不新增编译器依赖。
+- 运行时接线：可选 quotation_wasm_sha256 仅接受内置摘要，纳入 executionRevision；省略保留原指纹。WithQuotationSandbox 固定启用，新报价 SaveQuotation 与改单 AmendQuotation 运行精确折扣复核；与独立整数结果不一致或沙箱失败均阻断，不回退。金额汇总、目录与旧稿验证仍由可信 Go 承担；只声称折扣规则隔离。配置变更不接管旧运行版本任务/审批。
+- 运行时证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-wasm-runtime-check.log`、`m3-wasm-runtime-db.log`）；3 个 WASM 报价贯通场景通过（`m3-wasm-runtime-targeted.log`），含七五折审批、八折边界、改单重审、检查点失败恢复。单元测试覆盖摘要校验/指纹、取消和结果不一致不回退。schema 22 未变；测试库/角色残留 0，集群停止；本片远端待确认，无真实外发。
+- 近期远端：来源贯通 c04faec CI 39406978346/39406973183、备份 c44a543 CI 39407631878/39407623734 均 success。WASM 库层 4e21509 的 CI 尚未确认。
+- 下一片：核对 M3 剩余计算输出限额、隔离负例与部署材料；容器 Python、CPU 指令计量及文件产物扫描仍未实现，SQLite 范围仍待决策。
+- 证据：`pnpm check:go` 通过（`.tools/m3-wasm-rule-final.log`）。big.Int 差分覆盖边界/最大金额及 100 个固定随机样本；初版 i32 结果在 raw uint64 带高位导致拒绝，模块出口显式零扩展为 i64 后通过，保留边界测试。无数据库变更，未运行 test:db；远端 CI 待确认。下一步为显式启用与运行版本绑定。
+
+- WASM 输出边界补片：旧 Run 实际接受 9 个结果，负例复现于 `.tools/m3-wasm-output-before.log`。现于实例化前验证 i32/i64 签名，参数/结果各限 8；i32 超宽输入拒绝、输出零扩展，不放开文件或引用读取。含死循环启动段的非法签名先拒绝，避免执行后才发现超限。
+- 输出证据：`pnpm check:go` 通过（`.tools/m3-wasm-output-check.log`）；补启动段反例后沙箱与报价全部单元测试通过（`m3-wasm-output-final.log`），夹具另经独立 CompileModule 验证有效。无数据库变化，未重跑 test:db；远端待确认。仍未实现 CPU 指令计量、容器 Python 与文件扫描。

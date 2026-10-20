@@ -11,10 +11,40 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// WithQuotationSandbox enables the built-in digest approved by configuration.
+// The caller must bind the same digest into its execution revision.
+func (s *Store) WithQuotationSandbox(digest string) (*Store, error) {
+	if digest != quotation.ApprovalModuleSHA256 {
+		return nil, quotation.ErrInvalid
+	}
+	copy := *s
+	copy.quotationWASM = true
+	return &copy, nil
+}
+
+func (s *Store) checkQuotationRule(ctx context.Context, d quotation.Draft) error {
+	if !s.quotationWASM {
+		return nil
+	}
+	required, err := quotation.ApprovalInSandbox(ctx, d.StandardTotalMinor, d.TotalMinor, d.Policy.ApprovalBelowBPS)
+	if err != nil {
+		return err
+	}
+	// Independent integer verification remains mandatory; an unexpected module
+	// result must not change policy or silently fall back to the host result.
+	if required != d.RequiresApproval {
+		return ErrInvalidApproval
+	}
+	return nil
+}
+
 // SaveQuotation accepts a calculated draft from the trusted business adapter, not model text.
 func (s *Store) SaveQuotation(ctx context.Context, t *Task, d quotation.Draft) error {
 	if (t.State != ModelRunning && t.State != ToolRunning) || d.ID != t.ID || d.Version != 1 || quotation.Verify(d) != nil {
 		return ErrInvalidApproval
+	}
+	if err := s.checkQuotationRule(ctx, d); err != nil {
+		return err
 	}
 	raw, err := json.Marshal(d)
 	if err != nil {
@@ -127,6 +157,9 @@ func (s *Store) AmendQuotation(ctx context.Context, actor identity.ExternalIdent
 		next, err := quotation.Revise(old, in.QuoteHash, in.Changes)
 		if err != nil {
 			return ErrApprovalConflict
+		}
+		if err := s.checkQuotationRule(ctx, next); err != nil {
+			return err
 		}
 		body, err := json.Marshal(next)
 		if err != nil {

@@ -5,13 +5,15 @@
 - 受测目录为 E:/agent-project/.tools/sqlite-approval-verify；4fe8851 及其前三个指定祖先已推送 origin/codex/m3-operations-storage。
 - 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成（见下）；其余 OAuth、联合恢复、统计、SBOM、多平台、PDF、Python Worker、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
 - 第 4 项证据：pnpm check 退出 0（E:/agent-project/.tools/m3-online-backup-check.log）；补充在线恢复审批/撤权后 go test ./internal/bootstrap ./internal/sqlitedb ./cmd/migrate 退出 0（m3-online-backup-final.log）。首次定向测试因宿主默认临时目录/缓存访问拒绝失败，改用既有 E 盘工具目录后通过；未改变全局环境。无 PG/schema 变更，未重复全量 test:db。
-- 第 2 项：CI 39481450456 的 Windows 离线安装测试在首次 PowerShell 验包时触发 20 秒超时（ETIMEDOUT），打包成功；仅为完整验包设置 120 秒上限，二进制冒烟保持 20 秒，不重试、不跳过校验。9aa64cc 的 CI 39482454535 全部 success（含 Windows 离线与 Linux foundation/PG/race/e2e），原四个提交已闭环；本地安装回归 m3-ci-offline-timeout.log 退出 0。后续 2e63847/813e982 的 CI 39483392615/39483950043 仍待完成。
+- 第 2 项：CI 39481450456 的 Windows 离线安装测试在首次 PowerShell 验包时触发 20 秒超时（ETIMEDOUT），打包成功；仅为完整验包设置 120 秒上限，二进制冒烟保持 20 秒，不重试、不跳过校验。9aa64cc 的 CI 39482454535 全部 success（含 Windows 离线与 Linux foundation/PG/race/e2e），原四个提交已闭环；本地安装回归 m3-ci-offline-timeout.log 退出 0。后续 CI 结果见下方条目。
 
 - 工程证据：pnpm check:go 退出 0（E:/agent-project/.tools/m3-audience-go.log），无 schema 变更。
 - 第 9 项：群聊范围证明库已实现（R01/R12、V07），绑定租户/应用/群/内容摘要/版本，核对完整成员集合、逐人当前授权及检查前后范围版本；失败无证明。移除 Ground 的布尔放行，群聊通道仍关闭。合成正反例通过；真实 PG 的 TestGround 回归通过（E:/agent-project/.tools/m3-audience-vector-test.log）。初次误用无 vector 的 Windows 历史测试集群失败（m3-audience-test.log），已停库并改用既有 WSL 17/agentos-m3；测试库/角色残留 0，专用集群已停止。
 - 第 14 项：官方渠道能力矩阵已写入 contracts/channel-capabilities.md；企微原始开发页抓取失败的精确 API 能力明确待核实，基础接入使用腾讯官方指南交叉证明。未写渠道代码、未做真实租户验收。
 - 第 6 项：RunArtifact 复用 WASM 隔离约束，限制文本/JSON、最大 1 MiB，验证指针/长度、UTF-8、JSON 解码后内容并强制现场扫描器；失败/取消不返回产物。仅库层，无文件/WASI、无业务交付接线，不宣称完整杀毒。wazero v1.12.0 公开 API 未提供可直接配置的指令预算，函数 listener 的死循环反例仅通知一次，明确不支持指令计量。单点 contracts/sandbox.md；定向沙箱/报价测试与 pnpm check:go 均退出 0（E:/agent-project/.tools/m3-artifact-scan-test.log、m3-artifact-scan-go.log）。无数据库/schema 改动，未重复 PG 套件。
-- 第 3 项进行中：已通过浏览器读取飞书官方当前页面，确认换取/刷新为 v3，撤销为独立 v1/revoke。私有传输层与合成 HTTP 测试已实现；pnpm check:go 退出 0（E:/agent-project/.tools/m3-oauth-provider-go.log），无 schema 变更，未运行 PG。协议与来源单点见 contracts/feishu-docs.md。该项未完成：下一步实现 PG 加密凭证账本、state/PKCE 会话、刷新前持久意图/CAS、未知结果拒绝、本地先撤销和 Reader/Syncer/启动接线；现有 Credential 仍从环境变量载入静态 Token。不得把传输测试视为完整 OAuth 流程验收。
+- 第 3 项进行中：官方当前换取/刷新为 v3，撤销为独立 v1/revoke；6f98834 已推送私有传输层与合成 HTTP 测试，pnpm check:go 退出 0（m3-oauth-provider-go.log）。本片新增 AES-256-GCM 绑定加密/密钥轮换及 PG schema 23 密文 CAS/原子审计账本；停用/撤权/改绑不允许获取或覆盖旧凭证，合成数据、真实 PG 的并发 CAS、审计失败回滚与 RLS 负例通过（m3-oauth-ledger-db.log），pnpm check:go 退出 0（m3-oauth-ledger-go.log）。全量 pnpm test:db 退出 1，唯一失败为迁移测试仍假设 channel 10 张表；更新为 12 张且继续要求全部强制 RLS 后，数据库包重跑退出 0（m3-oauth-ledger-migrations.log），全量其余包均通过（m3-oauth-ledger-all-db.log）。测试库/角色残留 0，专用 PG 已停止。日志位于 E:/agent-project/.tools/。
+- 第 3 项下一步：实现 state/PKCE 会话、换取/刷新前持久意图、未知结果拒绝、本地先撤销和 Reader/Syncer/启动接线；现有 Credential 仍从环境变量载入静态 Token。协议/加密账本单点见 contracts/feishu-docs.md；不能把账本基础视为完整 OAuth 流程验收。PG 当前 schema 23，SQLite 仍为 8。
+- 后续 CI：2e63847 与 813e982 的 39483392615/39483950043 均 success；6f98834 的 39485157171 也已 success。
 
 ## 定位当前里程碑
 

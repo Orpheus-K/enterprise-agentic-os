@@ -55,6 +55,13 @@ type Evidence struct {
 	Anchor    string    `json:"anchor"`
 }
 
+func (r Reference) Validate() error {
+	if r.SourceID == uuid.Nil || !label(r.DocumentID, 256) || !label(r.ChunkID, 128) || r.ContentRevision < 1 || r.ACLRevision < 1 {
+		return ErrInvalid
+	}
+	return nil
+}
+
 func label(s string, max int) bool {
 	return s != "" && len(s) <= max && utf8.ValidString(s) && strings.TrimSpace(s) == s && !strings.ContainsRune(s, 0)
 }

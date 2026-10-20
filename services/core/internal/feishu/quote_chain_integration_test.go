@@ -5,6 +5,7 @@ package feishu
 import (
 	"agentos.local/core/internal/conversation"
 	"agentos.local/core/internal/identity"
+	identitypg "agentos.local/core/internal/identity/postgres"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/quotation"
 	"agentos.local/core/internal/skills"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
-	for _, mode := range []string{"normal", "checkpoint_failure", "model_bypass", "revoked", "boundary"} {
+	for _, mode := range []string{"normal", "checkpoint_failure", "model_bypass", "revoked", "boundary", "retrieval", "retrieval_revoked_amend"} {
 		t.Run(mode, func(t *testing.T) {
 			f := approvalEnvironment(t)
 			var calls, models atomic.Int32
@@ -64,6 +65,10 @@ func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var retrieval *retrievalFixture
+			if strings.HasPrefix(mode, "retrieval") {
+				retrieval = addRetrieval(t, f.chainFixture, f.approver)
+			}
 			t.Setenv("QUOTE_CHAIN_TOKEN", "synthetic-only-token")
 			creds, err := toolgateway.NewCredentials([]toolgateway.CredentialBinding{{Principal: identity.Principal{TenantID: testBinding().TenantID, MemberID: f.member}, Endpoint: remote.URL, TokenEnv: "QUOTE_CHAIN_TOKEN"}})
 			if err != nil {
@@ -81,6 +86,9 @@ func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
 				var request struct{ Messages []model.Message }
 				if json.NewDecoder(r.Body).Decode(&request) != nil || len(request.Messages) != 2 || request.Messages[1].Content != prompt {
 					t.Error("quotation message not passed to model")
+				}
+				if retrieval != nil && (len(request.Messages) == 0 || !strings.Contains(request.Messages[0].Content, "Authorized evidence 42") || strings.Contains(request.Messages[0].Content, "Forbidden")) {
+					t.Error("quotation model did not receive authorized evidence")
 				}
 				models.Add(1)
 				body := `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"quote-call","type":"function","function":{"name":"quote_data","arguments":"{\"quantity\":2,\"unit_minor\":7500}"}}]}}]}`
@@ -172,6 +180,14 @@ func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
 			}
 			edit := quoteEdit(a, draft)
 			edit.Changes[0].UnitMinor = 8500
+			if mode == "retrieval_revoked_amend" {
+				retrieval.revoke(t)
+				if out, err := f.store.AmendQuotation(t.Context(), f.actor, edit); !errors.Is(err, identitypg.ErrForbidden) || out.Response != "" {
+					t.Fatal("amendment ignored revoked knowledge", err)
+				}
+				f.state(t, "waiting_approval")
+				return
+			}
 			changed, err := f.store.AmendQuotation(t.Context(), f.actor, edit)
 			if err != nil {
 				t.Fatal(err)
@@ -183,6 +199,9 @@ func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
 				if !strings.Contains(text, "报价初稿 · V2") || !strings.Contains(text, "报价总额：170.00") || !strings.Contains(text, "未用章") {
 					t.Error("wrong final version")
 				}
+				if retrieval != nil && (!strings.Contains(text, "Authorized source") || !strings.Contains(text, "paragraph:1")) {
+					t.Error("quotation omitted grounded sources")
+				}
 				f.sends.Add(1)
 				return nil
 			})
@@ -192,6 +211,9 @@ func TestQuoteMessageToolApprovalAmendDelivery(t *testing.T) {
 			step("succeeded")
 			if calls.Load() != 1 || models.Load() != 1 || f.sends.Load() != 1 {
 				t.Fatal("duplicate external work", calls.Load(), models.Load(), f.sends.Load())
+			}
+			if retrieval != nil && retrieval.embeds != 1 {
+				t.Fatal("quotation repeated embedding")
 			}
 		})
 	}

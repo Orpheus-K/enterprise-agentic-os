@@ -155,7 +155,7 @@ func (s *Store) checkApproval(ctx context.Context, q database.Queries, id uuid.U
 	if !valid {
 		return ErrApprovalDenied
 	}
-	return nil
+	return s.checkTaskKnowledge(ctx, q, id, &identity.ExternalIdentity{TenantID: s.tenant, Provider: provider, Issuer: issuer, Subject: subject}, member)
 }
 
 func (s *Store) readApproval(ctx context.Context, q database.Queries, id uuid.UUID) (Approval, uuid.UUID, error) {
@@ -208,6 +208,9 @@ func (s *Store) InspectApproval(ctx context.Context, actor identity.ExternalIden
 		if err = s.approvalActor(ctx, q, actor, member); err != nil {
 			return err
 		}
+		if err = s.approvalKnowledge(ctx, q, id, actor, member); err != nil {
+			return err
+		}
 		_, err = q.Exec(ctx, `INSERT INTO channel.audit_reads(id,tenant_id,member_id,app_id,task_id,row_count,trace_id) VALUES($1,$2,$3,$4,$5,1,$6)`, uuid.New(), s.tenant, member, s.app, id, spanTraceID(ctx))
 		return err
 	})
@@ -232,6 +235,9 @@ func (s *Store) DecideApproval(ctx context.Context, actor identity.ExternalIdent
 			return err
 		}
 		if err = s.approvalActor(ctx, q, actor, member); err != nil {
+			return err
+		}
+		if err = s.approvalKnowledge(ctx, q, in.TaskID, actor, member); err != nil {
 			return err
 		}
 		if out.ID != in.ID || out.Revision != in.Revision || out.Version != in.Version || out.ContentHash != in.ContentHash || contentHash(out.Response) != in.ContentHash {

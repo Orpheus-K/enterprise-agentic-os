@@ -83,6 +83,12 @@ func (s *Store) NotifyOne(ctx context.Context, sender Notifier) (bool, error) {
 		if sender == nil {
 			return errors.New("approval notifier unavailable")
 		}
+		if err = s.approvalKnowledge(ctx, q, task, actor, member); err != nil {
+			if errors.Is(err, identitypg.ErrForbidden) {
+				return finish("cancelled")
+			}
+			return err
+		}
 		notice.Approval, _, err = s.readApproval(ctx, q, task)
 		if err != nil {
 			return err

@@ -4,8 +4,6 @@ package bootstrap
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -28,17 +26,19 @@ import (
 )
 
 type Config struct {
-	Tools                *ToolsConfig                 `json:"tools,omitempty"`
-	Skills               *SkillsConfig                `json:"skills,omitempty"`
-	Approval             *conversation.ApprovalPolicy `json:"approval,omitempty"`
-	Binding              feishu.Binding               `json:"binding"`
-	Mode                 string                       `json:"mode"`
-	DatabaseURLEnv       string                       `json:"database_url_env"`
-	AppSecretEnv         string                       `json:"app_secret_env"`
-	VerificationTokenEnv string                       `json:"verification_token_env"`
-	EncryptKeyEnv        string                       `json:"encrypt_key_env"`
-	Model                model.Config                 `json:"model"`
-	Operations           *OperationsConfig            `json:"operations,omitempty"`
+	Tools                *ToolsConfig                  `json:"tools,omitempty"`
+	Skills               *SkillsConfig                 `json:"skills,omitempty"`
+	Approval             *conversation.ApprovalPolicy  `json:"approval,omitempty"`
+	Binding              feishu.Binding                `json:"binding"`
+	Mode                 string                        `json:"mode"`
+	DatabaseURLEnv       string                        `json:"database_url_env"`
+	AppSecretEnv         string                        `json:"app_secret_env"`
+	VerificationTokenEnv string                        `json:"verification_token_env"`
+	EncryptKeyEnv        string                        `json:"encrypt_key_env"`
+	Model                model.Config                  `json:"model"`
+	Embedding            *model.EmbeddingConfig        `json:"embedding,omitempty"`
+	Retrieval            *conversation.RetrievalPolicy `json:"retrieval,omitempty"`
+	Operations           *OperationsConfig             `json:"operations,omitempty"`
 }
 type OperationsConfig struct {
 	TokenEnv string `json:"token_env"`
@@ -60,6 +60,19 @@ func Parse(raw []byte) (Config, error) {
 	}
 	if err := c.Model.Validate(); err != nil {
 		return c, err
+	}
+	if c.Embedding != nil {
+		if err := c.Embedding.Validate(); err != nil {
+			return c, err
+		}
+	}
+	if c.Retrieval != nil {
+		if err := c.Retrieval.Validate(); err != nil {
+			return c, err
+		}
+		if c.Embedding == nil || c.Retrieval.Space.Model != c.Embedding.Name || c.Retrieval.Space.ModelRevision != c.Embedding.Revision {
+			return c, errors.New("retrieval requires matching approved embedding configuration")
+		}
 	}
 	if c.Mode != "websocket" && c.Mode != "webhook" {
 		return c, errors.New("channel mode must be websocket or webhook")
@@ -158,6 +171,10 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	if err != nil {
 		return nil, err
 	}
+	embedder, err := openEmbedder(c.Embedding)
+	if err != nil {
+		return nil, err
+	}
 	openCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	db, err := database.Open(openCtx, dbURL, 4)
@@ -181,12 +198,22 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		}
 	}()
 	// Bind queued work to installation and approved model configuration, independent of transport mode.
-	revisionData, _ := json.Marshal(struct {
-		Binding feishu.Binding
-		Model   model.Config
-	}{c.Binding, c.Model})
-	hash := sha256.Sum256(revisionData)
-	store := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, hex.EncodeToString(hash[:]))
+	store := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+	if c.Retrieval != nil {
+		store, err = store.WithRetrieval(*c.Retrieval, embedder)
+		if err != nil {
+			return nil, err
+		}
+		k, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+		if err != nil {
+			return nil, err
+		}
+		if err := db.Transaction(ctx, func(q database.Queries) error {
+			return k.CheckSpaceIn(ctx, q, c.Retrieval.Space, c.Embedding.Dimensions)
+		}); err != nil {
+			return nil, errors.New("retrieval embedding space unavailable or inconsistent")
+		}
+	}
 	if c.Approval != nil {
 		store, err = store.WithApproval(*c.Approval)
 		if err != nil {

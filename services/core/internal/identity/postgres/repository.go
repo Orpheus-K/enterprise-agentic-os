@@ -29,28 +29,44 @@ func (r *Repository) WithCapability(ctx context.Context, p identity.Principal, a
 
 func New(db *database.DB) *Repository { return &Repository{db: db} }
 
-func (r *Repository) Resolve(ctx context.Context, external identity.ExternalIdentity) (identity.Principal, error) {
+// ResolveIn rechecks an external identity inside a caller-owned transaction, for
+// authorization after waiting on a business row lock. It leaves this actor's
+// transaction-local context installed; it never commits or opens another pool slot.
+func (r *Repository) ResolveIn(ctx context.Context, q database.Queries, external identity.ExternalIdentity) (identity.Principal, error) {
 	if err := external.Validate(); err != nil {
 		return identity.Principal{}, err
 	}
 	principal := identity.Principal{TenantID: external.TenantID}
+	if _, err := q.Exec(ctx, `SELECT set_config('agentos.tenant_id',$1,true),
+ set_config('agentos.provider',$2,true),set_config('agentos.issuer',$3,true),
+ set_config('agentos.subject',$4,true),set_config('agentos.member_id','',true)`,
+		external.TenantID.String(), external.Provider, external.Issuer, external.Subject); err != nil {
+		return identity.Principal{}, err
+	}
+	err := q.QueryRow(ctx, `SELECT member_id FROM iam.identity_links
+ WHERE tenant_id=$1 AND provider=$2 AND issuer=$3 AND subject=$4`,
+		external.TenantID, external.Provider, external.Issuer, external.Subject).Scan(&principal.MemberID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = identity.ErrUnauthenticated
+	}
+	if err != nil {
+		return identity.Principal{}, err
+	}
+	if err := authorize(ctx, q, principal); err != nil {
+		return identity.Principal{}, err
+	}
+	return principal, nil
+}
+
+func (r *Repository) Resolve(ctx context.Context, external identity.ExternalIdentity) (identity.Principal, error) {
+	if err := external.Validate(); err != nil {
+		return identity.Principal{}, err
+	}
+	var principal identity.Principal
 	err := r.db.Transaction(ctx, func(q database.Queries) error {
-		_, err := q.Exec(ctx, `SELECT set_config('agentos.tenant_id', $1, true),
-            set_config('agentos.provider', $2, true), set_config('agentos.issuer', $3, true),
-            set_config('agentos.subject', $4, true)`, external.TenantID.String(), external.Provider, external.Issuer, external.Subject)
-		if err != nil {
-			return err
-		}
-		err = q.QueryRow(ctx, `SELECT member_id FROM iam.identity_links
-            WHERE tenant_id=$1 AND provider=$2 AND issuer=$3 AND subject=$4`,
-			external.TenantID, external.Provider, external.Issuer, external.Subject).Scan(&principal.MemberID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return identity.ErrUnauthenticated
-		}
-		if err != nil {
-			return err
-		}
-		return authorize(ctx, q, principal)
+		var err error
+		principal, err = r.ResolveIn(ctx, q, external)
+		return err
 	})
 	if err != nil {
 		return identity.Principal{}, err

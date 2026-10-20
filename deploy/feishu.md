@@ -2,12 +2,44 @@
 
 ## 准备可信绑定
 
-1. 按 [数据库指南](postgres/README.md) 升级至 schema 18，使用独立运行账户。
+1. 按 [数据库指南](postgres/README.md) 升级至当前制品要求的 schema，使用独立运行账户。
 2. 创建飞书自建应用与机器人，订阅 `im.message.receive_v1`，配置单聊接收与机器人回复权限。只在测试租户验证，不开启无授权知识源或工具。
 3. 由受控管理员预置 IAM 租户、成员与身份映射；Provider=`feishu`，Issuer=`feishu:<AppID>:<TenantKey>`，Subject 为该应用的用户 OpenID。运行账户无 IAM 写权；当前没有自动注册用户或组织同步。
 4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。
 
-配置授予已映射且启用的成员使用该安装的纯文本模型能力，不授予文档检索或业务写入。外部模型需先获准承接消息数据；内网无 TLS 模型须显式设置 `allow_http=true`，不得隐式降级。无鉴权内网服务可将 `api_key_env` 设为空字符串；其余命名环境变量缺失即拒绝启动。
+聊天配置授予已映射且启用的成员使用该安装的纯文本模型能力，不替代知识来源 ACL 或业务写入授权。外部模型需先获准承接消息及拟发送的检索资料；内网无 TLS 模型须显式设置 `allow_http=true`，不得隐式降级。无鉴权内网服务可将 `api_key_env` 设为空字符串；其余命名环境变量缺失即拒绝启动。
+
+可选增加顶层 `embedding` 对象，为后续知识消费者准备独立客户端：
+
+```json
+{
+  "embedding": {
+    "endpoint": "https://approved-model.example/v1/embeddings",
+    "name": "replace-with-approved-embedding-model",
+    "revision": "replace-with-approved-revision",
+    "dimensions": 1536,
+    "api_key_env": "AGENTOS_EMBEDDING_API_KEY",
+    "allow_http": false
+  }
+}
+```
+
+这是需合并到安装配置的片段；维度、模型及版本须按批准空间填写。单独配置 embedding 不启用会话检索。显式启用时另加：
+
+```json
+{
+  "retrieval": {
+    "space": {
+      "space_id": "11111111-1111-4111-8111-111111111111",
+      "model": "replace-with-approved-embedding-model",
+      "model_revision": "replace-with-approved-revision"
+    },
+    "limit": 5
+  }
+}
+```
+
+空间 ID 必须替换为管理员已预置且启用的当前安装空间；还须通过受控同步入口发布内容、ACL、健康及向量。启动校验数据库空间，不发模型探测请求。开启、关闭或更换 retrieval 会改变执行指纹，升级前排空旧任务或保留原获准配置处理完毕。当前单聊、审批、恢复及来源展示限制见 [会话检索契约](../contracts/knowledge.md#会话检索与交付)。
 
 ## 启动入口
 

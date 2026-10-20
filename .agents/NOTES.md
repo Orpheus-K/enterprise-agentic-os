@@ -2,8 +2,17 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-19，工程 M1、M2 已退出；M3 已完成：知识存储/健康（15—16）、授权向量检索（17）、引用消费者库层、任务清单与基础统计（18）。整体蓝图未完成。
-- 推进计划：①消费者签收 ✔ ②审计查询/统计 ③计算隔离 ④原生来源连接器 ⑤检索接入对话与交付 ⑥SQLite 轻量驱动 ⑦离线安装与备份恢复 ⑧M3 退出验收。
+- 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，本机验证）。M3 整体尚未退出。
+- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④原生来源连接器待实现 ⑤会话检索本机验证完成，远端 CI 待确认 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+
+## 当前切片：会话检索与交付（2026-10-20）
+
+- 实现：R03/R06/R10/R12/R13、A04/A05/A06/A08、T05/T06/T08/T09/T10/T13、V03/V06/V07/V08/V12 的执行与授权边界。配置 retrieval 固定空间、模型/版本、limit，启动验证空间与维度，指纹绑定嵌入配置；未启用保留纯聊天指纹。Worker 在外部意图后 Embed/Search/Ground 并持久化引用，后续工具回合复用且重验，响应附真实来源标题和锚点。契约单点见 [会话检索与交付](../contracts/knowledge.md#会话检索与交付)。
+- 守住交付：模型前续租、工具/发送意图在任务锁后用同一事务重验当前身份及全部引用；审批查看、决定、改单和通知另验审批人的知识权限。未知嵌入不自动重放；审计/数据库错误显式失败，不当作无资料。群聊仍由渠道拒绝。
+- 证据：最终生产代码 `pnpm check`、`pnpm test:db` 均退出 0（`.tools/m3-retrieval-runtime-final-check.log`、`m3-retrieval-runtime-final-db.log`）；启动/配置/撤权/恢复/审批/工具定向日志 `m3-retrieval-runtime-targeted.log`。后补报价贯穿用例 `go test -tags=integration -count=1 -run '^TestQuoteMessageToolApprovalAmendDelivery/retrieval' -v ./internal/feishu` 通过（`m3-retrieval-quote.log`），覆盖来源进入工具报价、改单后批准交付及撤权拒绝改单。均为合成来源、模型/MCP/发送替身。
+- 保留反例：续租锁等待期间撤权的测试先失败（旧代码返回 nil），补锁后重验后通过；日志 `m3-retrieval-renew-before.log`、`m3-retrieval-renew-after.log`。最终全量在该生产修复后执行。
+- 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；Windows 无 gcc，Linux race 需远端 CI。工作分支 `codex/m3-conversation-retrieval`，本片远端结果尚未确认。
+- 下一片：核实飞书云文档权限语义、版本/游标恢复及撤回信号，完成受控来源连接器与向量发布；不得以应用 Token 可读推导全员 ACL。真实租户/模型联调、中文召回质量、群聊接收范围及 M3 其余退出项仍待独立验收；SQLite 未启动重写。
 
 ## SQLite 差距清单（未实现，需决策）
 
@@ -12,7 +21,23 @@
 - 建议路线（待用户确认）：先抽取窄的存储接口并只迁移任务/审批/审计/身份（M1—M2 范围），知识与向量在 SQLite 版明确禁用并拒绝启动对应能力；同一契约测试在 PG 与 SQLite 双跑后再扩展。预计为多切片工作，不在单次提交内完成，也不宣称 A03 已满足。
 ## M3 嵌入客户端（库层）
 
-- 实现：model.Embedder（固定 URL/模型/Revision/维度，拒绝维度或条数不符、溢出、超大响应；错误脱敏），共用 post() 已重构自 Client.request。契约见 [知识契约第 9—10 条](../contracts/knowledge.md)。去掉维度检查的变异使测试失败。未接入配置、启动装配与批量嵌入发布。
+- 实现：model.Embedder（固定 URL/模型/Revision/维度，拒绝维度或条数不符、溢出、超大响应；错误脱敏），共用 post() 已重构自 Client.request。契约见 [知识契约](../contracts/knowledge.md#查询向量来源与配置)。去掉维度检查的变异使测试失败。
+- 远端证据：2026-10-20 核实 5b7b41342d74597295c86625840a6db62bf021b9 [CI 39284755597](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39284755597) completed/success，不再处于排队未确认状态。
+
+## M3 嵌入配置切片（2026-10-20）
+
+- 范围：R10/R13、A05/A06/A08、T13/V12 的配置边界。bootstrap.Config 增加可选 embedding，严格解析；启动独立读取 APIKeyEnv 并构造客户端，命名密钥缺失在数据库连接前失败。省略/null 不构造，启动无供应商探测或文本外发。
+- 证据：`go test -count=1 ./internal/bootstrap ./internal/model` 通过，覆盖配置、独立凭证、无鉴权服务及实际 Open 启动失败路径；`pnpm check` 退出 0，日志 `.tools/m3-embedding-config-check.log`；`git diff --check` 通过。本片未改变数据库语义，未运行 test:db；新改动尚无远端 CI 证据。
+- 边界：未接入业务 Embed 调用；不修改纯聊天运行指纹、不宣称 RAG 可用。部署片段见 [飞书配置](../deploy/feishu.md)，契约为单点规范。
+- 下一片：先检查 conversation 的版本、检查点和 delivery_pending 恢复路径；将检索空间/配置纳入运行绑定，持久化引用，模型前与交付前按当前身份取证。验证模型后撤权、恢复后旧引用、跨租户及审计失败；完成这些前不启用检索。随后再做飞书云文档来源与双通道恢复；SQLite 仍待范围决策。
+
+## M3 会话引用检查点（2026-10-20，schema 19）
+
+- 范围：R03/R06/R12、A04/A06/A08、T05/T06/T08、V03/V07。00019 新增 `channel.tasks.knowledge_refs`；SaveKnowledgeReferences 在 model_running 下以有效租约/世代/步骤保存不可变引用集合，并原子留痕；Claim 恢复引用，区分未准备与空结果。契约见 [持久化会话引用](../contracts/knowledge.md#持久化会话引用消费者前置)。
+- 本机证据：`go test -tags=integration -count=1 -run TestKnowledgeCheckpoint -v ./internal/feishu` 通过；真实 PG 全量 `pnpm test:db`、`pnpm check` 均退出 0，日志 `.tools/m3-retrieval-checkpoint-targeted.log`、`m3-retrieval-checkpoint-full-db.log`、`m3-retrieval-checkpoint-check.log`。测试覆盖连接池重开、空结果、篡改/重复/无效输入、跨范围及过期执行者拒写、审计回滚、未知意图不自动重放。初次定向编译因测试用例名称缺少 map 下标失败，修正后通过。
+- 清理：WSL `17/agentos-m3`（55440）测试库/角色残留均为 0，已停止本次启动的集群。未跑 Windows race（无 gcc）；本片仍无远端 CI 证据。
+- 边界：仅新增持久化能力，Worker 尚未调用，无检索正文流入模型或交付。之前的 schema-18 备份演练为历史证据，不自动覆盖 schema 19。
+- 下一片：在 bootstrap 固定检索空间、Embedding 配置与运行 Revision；Worker 先提交 model_running 意图，再 Embed/Search/Ground、保存引用并调用模型。恢复/工具后续回合使用原引用重新取证，交付前任何引用失效均阻断整个响应；审批查看和通知须分别验证审批人的知识权限，不能只核对任务发起人。完成真实 PG 撤权/恢复/审计故障测试后再启用会话检索。
 
 ## M3 PG 备份恢复演练
 
@@ -70,14 +95,13 @@
 - 远端证据：3313a87 [CI 39275270620](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39275270620) success（工程检查、真实 PG、驱动探针、race、e2e），日志 .tools/m3-ground-ci.log。本切片签收。
 - 修复就绪：conversation.Ready 写死 schema 16，而启动要求 17，当前制品 /api/ready 恒 503。改为共享 database.SchemaVersion；补“当前 schema 必须就绪”断言，旧代码下该断言失败（Storage:unavailable），修复后通过。全量 test:db 与 check 退出 0（m3-ready-*.log），残留 0。
 
-## 接续 M3 下一切片
+## M3 后续认证
 
-1. 评估 A05 剩余项：中文全文（pg_search/BM25）许可与过滤召回、备份/扩展升级演练；未认证前保持禁用。
-2. 原生来源权限同步与游标恢复仍待完成；引用消费者接入对话与交付须先有 Embedding 来源与群聊接收范围证明。
+当前开发顺序以本页顶部当前切片为准。A05 剩余中文全文（pg_search/BM25）许可、过滤召回与扩展升级仍待认证；schema-18 备份演练不替代后续 schema 联合恢复。群聊在接收范围证明完成前继续禁用。
 
 ## 保留交付环境
 
 - 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
-- 当前 M3 制品使用 schema 17；00001—00016 保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+- 当前工作树制品要求 schema 19；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。

@@ -96,7 +96,7 @@ func (s *Store) bindRoute(ctx context.Context, t *Task, ref skills.Ref) error {
 
 func (w *Worker) route(ctx context.Context, t *Task, finish func(State, string) error) error {
 	if err := w.authorize(ctx, t); err != nil {
-		return finish(Failed, "route_identity_denied")
+		return authorizationFailure(err, "route_identity_denied", finish)
 	}
 	summaries, err := w.Store.routeSummaries(ctx, t.Principal, t.Routes)
 	if err != nil {
@@ -135,7 +135,7 @@ func (w *Worker) route(ctx context.Context, t *Task, finish func(State, string) 
 		return finish(Failed, "route_no_authorized_match")
 	}
 	if err = w.authorize(ctx, t); err != nil {
-		return finish(Failed, "route_identity_denied")
+		return authorizationFailure(err, "route_identity_denied", finish)
 	}
 	err = w.Store.bindRoute(ctx, t, ref)
 	if err == ErrSkillDenied {

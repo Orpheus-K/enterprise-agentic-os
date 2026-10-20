@@ -93,6 +93,9 @@ func (s *Store) AmendQuotation(ctx context.Context, actor identity.ExternalIdent
 		if err = s.approvalActor(ctx, q, actor, member); err != nil {
 			return err
 		}
+		if err = s.approvalKnowledge(ctx, q, in.TaskID, actor, member); err != nil {
+			return err
+		}
 		var priorHash string
 		var priorMember uuid.UUID
 		err = q.QueryRow(ctx, `SELECT request_hash,member_id,result FROM channel.quote_edits WHERE tenant_id=$1 AND task_id=$2 AND request_id=$3`, s.tenant, in.TaskID, in.RequestID).Scan(&priorHash, &priorMember, &out)

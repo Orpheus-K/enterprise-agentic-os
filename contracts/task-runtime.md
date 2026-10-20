@@ -75,3 +75,5 @@
 证据：[真实数据库工具循环测试](../services/core/internal/feishu/tool_loop_integration_test.go) 覆盖检查点写入故障、连接池重开、结果复用、缺失结果、撤权、预算与旧租约拒写；均使用合成 MCP/模型服务。
 
 审批通知的发送状态以独立 operation_id 进入任务审计，不推进任务步骤；配置、撤权与未知发送结果规则见 [通知契约](approval-notices.md)。
+
+schema 19 增加不可变会话引用检查点；字段、写入阶段、恢复与重验约束见 [知识契约](knowledge.md#持久化会话引用消费者前置)。可选检索在 model_running 意图后调用 Embedding；模型、工具、审批与交付的重验边界见 [会话检索与交付](knowledge.md#会话检索与交付)。

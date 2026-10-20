@@ -4,6 +4,7 @@ import (
 	"agentos.local/core/internal/database"
 	"agentos.local/core/internal/identity"
 	identitypg "agentos.local/core/internal/identity/postgres"
+	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/skills"
 	"context"
@@ -19,6 +20,7 @@ type Message struct {
 	Identity                              identity.ExternalIdentity
 }
 type Task struct {
+	KnowledgeRefs       []knowledge.Reference
 	QuoteVersion        int64
 	Routes              []skills.Ref
 	History             []model.Message
@@ -43,6 +45,7 @@ type Store struct {
 	skills        *skills.Registry
 	selectedSkill skills.Ref
 	routes        []skills.Ref
+	retrieval     *retrieval
 }
 
 func NewStore(db *database.DB, tenant uuid.UUID, app, revision string) *Store {
@@ -145,8 +148,8 @@ func (s *Store) Claim(ctx context.Context) (*Task, error) {
  WHERE (tenant_id,id)=(SELECT tenant_id,id FROM channel.tasks WHERE tenant_id=$1 AND app_id=$2 AND model_revision=$3
  AND (state='pending' OR (state IN ('claimed','delivery_pending','tool_pending','tool_running') AND lease_until<=clock_timestamp()))
  ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
- RETURNING id,member_id,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,''),coalesce(skill_name,''),coalesce(skill_revision,''),tool_history,tool_invocation,tool_steps,skill_routes,coalesce(quote_version,0)`,
-			s.tenant, s.app, s.revision, s.owner).Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Issuer, &task.Message.Identity.Subject, &task.Message.EventID, &task.Message.MessageID, &task.Message.Text, &ingressTrace, &ingressSpan, &task.State, &task.Generation, &task.Version, &task.Response, &task.Skill.Name, &task.Skill.Revision, &task.History, &task.Tool, &task.ToolSteps, &task.Routes, &task.QuoteVersion)
+ RETURNING id,member_id,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,''),coalesce(skill_name,''),coalesce(skill_revision,''),tool_history,tool_invocation,tool_steps,skill_routes,coalesce(quote_version,0),knowledge_refs`,
+			s.tenant, s.app, s.revision, s.owner).Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Issuer, &task.Message.Identity.Subject, &task.Message.EventID, &task.Message.MessageID, &task.Message.Text, &ingressTrace, &ingressSpan, &task.State, &task.Generation, &task.Version, &task.Response, &task.Skill.Name, &task.Skill.Revision, &task.History, &task.Tool, &task.ToolSteps, &task.Routes, &task.QuoteVersion, &task.KnowledgeRefs)
 		if err != nil {
 			return err
 		}
@@ -180,7 +183,9 @@ func (s *Store) Authorize(ctx context.Context, t *Task) error {
 	if p != t.Principal {
 		return identity.ErrUnauthenticated
 	}
-	return nil
+	return s.scoped(ctx, func(q database.Queries) error {
+		return s.checkTaskKnowledge(ctx, q, t.ID, nil, uuid.Nil)
+	})
 }
 
 func (s *Store) Transition(ctx context.Context, t *Task, to State, reason, response string) error {
@@ -199,6 +204,11 @@ func (s *Store) Transition(ctx context.Context, t *Task, to State, reason, respo
 		}
 		if to == DeliveryRunning {
 			if err := s.checkApproval(ctx, q, t.ID); err != nil {
+				return err
+			}
+		}
+		if to == ModelRunning || to == ToolRunning || to == DeliveryRunning {
+			if err := s.checkTaskKnowledge(ctx, q, t.ID, nil, uuid.Nil); err != nil {
 				return err
 			}
 		}
@@ -242,6 +252,9 @@ func (s *Store) lockTask(ctx context.Context, q database.Queries, t *Task) error
 func (s *Store) Renew(ctx context.Context, t *Task) error {
 	return s.scoped(ctx, func(q database.Queries) error {
 		if err := s.lockTask(ctx, q, t); err != nil {
+			return err
+		}
+		if err := s.checkTaskKnowledge(ctx, q, t.ID, nil, uuid.Nil); err != nil {
 			return err
 		}
 		result, err := q.Exec(ctx, `UPDATE channel.tasks SET lease_until=clock_timestamp()+interval '90 seconds'

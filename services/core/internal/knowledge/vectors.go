@@ -116,6 +116,18 @@ func (s *Store) space(ctx context.Context, q database.Queries, in Space, dimensi
 	return nil
 }
 
+// CheckSpaceIn validates installation configuration without loading any document.
+// Space rows have an installation-only read policy; no user authority is inferred.
+func (s *Store) CheckSpaceIn(ctx context.Context, q database.Queries, in Space, dimensions int) error {
+	if !in.validate() || dimensions < 1 || dimensions > maxDimensions {
+		return ErrInvalid
+	}
+	if _, err := q.Exec(ctx, `SELECT set_config('agentos.tenant_id',$1,true),set_config('agentos.app_id',$2,true)`, s.tenant.String(), s.app); err != nil {
+		return err
+	}
+	return s.space(ctx, q, in, dimensions)
+}
+
 // PublishVectors atomically replaces the document's vectors in one space. ACL changes do not
 // touch vectors; a new content revision removes them through the chunk cascade.
 func (s *Store) PublishVectors(ctx context.Context, actor identity.ExternalIdentity, in VectorSet) error {

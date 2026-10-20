@@ -1,6 +1,8 @@
 package conversation
 
 import (
+	"agentos.local/core/internal/identity"
+	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/quotation"
 	"agentos.local/core/internal/telemetry"
@@ -84,7 +86,7 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 	}
 	if t.State == Claimed {
 		if err := w.authorize(ctx, t); err != nil {
-			return finish(Failed, "identity_denied")
+			return authorizationFailure(err, "identity_denied", finish)
 		}
 		var instructions string
 		quoteRequired := false
@@ -124,11 +126,47 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 			if errors.Is(err, ErrSkillDenied) {
 				return finish(Failed, "skill_denied")
 			}
+			if errors.Is(err, ErrKnowledgeDenied) {
+				return finish(Failed, "knowledge_denied")
+			}
 			return err
+		}
+		evidence, err := w.Store.prepareKnowledge(ctx, t)
+		if err != nil {
+			switch {
+			case errors.Is(err, errEmbeddingUnknown):
+				return finish(Unknown, "embedding_failed")
+			case errors.Is(err, ErrKnowledgeDenied):
+				return finish(Failed, "knowledge_denied")
+			default:
+				return err
+			}
+		}
+		if t.KnowledgeRefs != nil {
+			contextBlock, err := knowledgeInstructions(evidence)
+			if err != nil {
+				return finish(Failed, "knowledge_context_exceeded")
+			}
+			instructions += "\n" + contextBlock
+			if len(instructions) > 131072 {
+				return finish(Failed, "knowledge_context_exceeded")
+			}
+			if skillModel == nil {
+				var ok bool
+				skillModel, ok = w.Model.(SkillModel)
+				if !ok {
+					return finish(Failed, "knowledge_model_unsupported")
+				}
+			}
+			if err := w.Store.Renew(ctx, t); err != nil {
+				if errors.Is(err, ErrKnowledgeDenied) {
+					return finish(Failed, "knowledge_denied")
+				}
+				return err
+			}
 		}
 		modelCtx, modelEnd := w.Telemetry.Start(ctx, "model.complete")
 		var response string
-		var err error
 		var turn model.TurnResult
 		if turnModel != nil {
 			tools := make([]model.Tool, 0, len(definitions))
@@ -160,12 +198,16 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 		if quoteRequired {
 			return finish(Failed, "quotation_tool_required")
 		}
+		response, err = knowledgeSources(response, evidence)
+		if err != nil {
+			return finish(Failed, "knowledge_output_exceeded")
+		}
 		if err := w.Store.Transition(ctx, t, DeliveryPending, "", response); err != nil {
 			return err
 		}
 	}
 	if err := w.authorize(ctx, t); err != nil {
-		return finish(Failed, "delivery_denied")
+		return authorizationFailure(err, "delivery_denied", finish)
 	}
 	if waiting, err := w.Store.SuspendApproval(ctx, t); err != nil {
 		return err
@@ -183,6 +225,23 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 		if err != nil {
 			return finish(Failed, "quotation_render_invalid")
 		}
+		if t.KnowledgeRefs != nil {
+			k, err := knowledge.New(w.Store.db, w.Store.tenant, w.Store.app)
+			if err != nil {
+				return err
+			}
+			grounded, err := k.Ground(ctx, t.Message.Identity, t.KnowledgeRefs, knowledge.Audience{})
+			if err != nil {
+				return err
+			}
+			if grounded.Dropped != 0 {
+				return finish(Failed, "knowledge_denied")
+			}
+			deliveryText, err = knowledgeSources(deliveryText, grounded.Evidence)
+			if err != nil {
+				return finish(Failed, "knowledge_output_exceeded")
+			}
+		}
 	}
 	if err := w.Store.Transition(ctx, t, DeliveryRunning, "", ""); err != nil {
 		if errors.Is(err, ErrSkillDenied) {
@@ -190,6 +249,9 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 		}
 		if errors.Is(err, ErrApprovalDenied) {
 			return finish(Failed, "approval_denied")
+		}
+		if errors.Is(err, ErrKnowledgeDenied) {
+			return finish(Failed, "knowledge_denied")
 		}
 		return err
 	}
@@ -230,6 +292,15 @@ func (w *Worker) authorize(ctx context.Context, t *Task) error {
 	return err
 }
 
+func authorizationFailure(err error, reason string, finish func(State, string) error) error {
+	if errors.Is(err, identity.ErrUnauthenticated) || errors.Is(err, ErrKnowledgeDenied) ||
+		errors.Is(err, ErrSkillDenied) || errors.Is(err, toolgateway.ErrDenied) {
+		return finish(Failed, reason)
+	}
+	// An unavailable database/audit is not evidence of a business denial.
+	return err
+}
+
 func (w *Worker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -260,11 +331,14 @@ func (w *Worker) runTool(ctx context.Context, t *Task, finish func(State, string
 		return finish(Unknown, "tool_runtime_unavailable")
 	}
 	if err := w.authorize(ctx, t); err != nil {
-		return finish(Failed, "tool_identity_denied")
+		return authorizationFailure(err, "tool_identity_denied", finish)
 	}
 	recovering := t.State == ToolRunning
 	if !recovering {
 		if err := w.Store.Transition(ctx, t, ToolRunning, "", ""); err != nil {
+			if errors.Is(err, ErrKnowledgeDenied) {
+				return finish(Failed, "knowledge_denied")
+			}
 			return err
 		}
 	}

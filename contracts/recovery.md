@@ -1,6 +1,6 @@
 # 数据库、配置与密钥联合恢复
 
-关联 R19、A10、V15。当前实现为 `internal/recovery` 的认证封装与 SQLite 库层；PG 联合适配、可信密钥存储接入和管理命令尚未完成。已有 `--sqlite-backup/restore` 和 PG 脚本仍是数据库单独备份，不自动获得本契约的联合校验。
+关联 R19、A10、V15。当前实现为 `internal/recovery` 的认证封装与 SQLite/PG 联合恢复库；可信配置/密钥存储接入和管理命令尚未完成。已有 `--sqlite-backup/restore` 和 PG 脚本仍是数据库单独备份，不自动获得本契约的联合校验。
 
 ## 备份边界
 
@@ -22,8 +22,22 @@
 
 SQLite 恢复到私有临时目录，验证数据库完整性/schema/外键及授权事实，写入原始配置字节；全部成功后才发布新的目标目录。失败清除临时输出，已有目标拒绝。成功目录包含 `database.sqlite`、`configuration.json`；不会启动服务、改变配置中的路径或重放任务。迁移站点路径必须另行审批并验证执行配置版本；恢复后的外部写入/未知结果仍按任务核对流程处理。
 
+## PostgreSQL 联合适配
+
+`BackupPostgres` 使用只读 REPEATABLE READ 事务导出快照，将快照 ID 传给 pg_dump；状态清单与 dump 因而读取同一数据状态，依据 [PostgreSQL 17 的 --snapshot 协议](https://www.postgresql.org/docs/17/app-pgdump.html)。`database/` 包含 custom-format 的 database.dump 和 state.json，后者保存当前 schema、PG 主版本、pgvector 版本，以及 public/iam/channel/knowledge 每张业务表的所有者、强制 RLS 标志、行数和全值摘要。二者均绑定进联合封装。
+
+当前支持 PG 17、pgvector 0.8.7 和当前程序 schema；pg_dump/pg_restore 也必须为 17 系列。恢复前核对目标服务器主版本和可安装扩展默认版本。角色必须按部署脚本预建；不导出角色密码，不声称已备份集群全局对象、表空间或外部原件。源库及其超级用户必须可信：认证摘要证明来源与完整性，不把任意 SQL dump 变成安全代码。
+
+当前事实摘要覆盖所有 IAM 表、来源及健康、文档/切片和 OAuth 账本；OAuth 刷新/撤销、内容/ACL 版本变化均保守拒绝旧快照。需要独立当前权威源，不允许用 RLS 下只可见部分行的运行角色自证全库状态。全部受测操作仅在合成库使用备份管理员连接。
+
+`RestorePostgres` 拒绝已有库/配置目录，在新库创建时即设置 connection limit 0，撤销 PUBLIC、运行与迁移角色的 CONNECT；仅超级用户执行单事务 pg_restore。随后比较所有表事实、版本和当前授权，配置最后发布。成功库仍隔离，不自动解锁普通连接，不启动 Worker。失败只尝试删除本次创建的新库；清理失败或创建结果未知须管理员核对，不能宣称目标已清除。数据库与文件系统不是原子事务，隔离状态及配置最后发布用于避免不完整现场被运行时使用。
+
+PG 连接只接受显式主机/用户名/库名的 postgres URL，支持 sslmode/sslrootcert/sslcert/sslkey/channel_binding/application_name；未知、重复或重定向参数拒绝。CLI 子进程使用逐项 libpq 环境变量，连接密码不进入 argv，提供方 stderr 不原样输出；当前不支持任意 libpq service/运行选项。客户端为显式绝对路径。
+
 ## 证据与未完成范围
 
 真实 SQLite 的 DELETE/WAL 两种备份覆盖配置恢复、旧权限恢复拒绝、恢复中撤权、密钥撤销、版本不符、数据库/配置篡改、额外文件、缺权威源与覆盖拒绝。认证封装反例还覆盖修改全部安全元数据、错误密钥、随机 nonce、有界解码与提供方错误脱敏。
 
-这些测试证明 SQLite 库层行为；不证明 PG、管理入口、真实密钥服务、现场灾备、跨机恢复或客户 RTO/RPO。完成上述接入前，第 5 项联合恢复仍未完成。
+PG 使用真实 PG 17/pgvector 0.8.7 和原生 pg_dump/pg_restore 验证完整恢复、配置字节一致、隔离连接、IAM/ACL/OAuth 变化拒绝、恢复中撤权、密钥撤销、版本/篡改/已有库拒绝、恢复命令失败清理；运行角色不能执行全库备份。CI 从 [PG 官方 Apt 源](https://www.postgresql.org/download/linux/ubuntu/)安装 17 系列客户端，测试不退回旧客户端或跳过。
+
+这些测试证明双驱动库层行为；不证明管理入口、真实密钥服务、现场灾备、跨机恢复或客户 RTO/RPO。完成上述接入前，第 5 项联合恢复仍未完成。

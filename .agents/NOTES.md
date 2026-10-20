@@ -17,7 +17,10 @@
 - 表格切片：校验行列、cells/children 顺序、明确单位合并跨度；整表为一个 JSON 正文切片，保留表头标记、空单元格、转义字符及父级条件，不单独发布单元格。`pnpm check:go` 通过（`.tools/m3-feishu-tables-check.log`），覆盖价格表关系、缺合并信息/错误几何拒绝、类型错配和序列化后超限；无 SQL 变更，未重复数据库测试。本片远端尚未确认。
 - 身份切片：MappedReader 固定安装 TenantID/AppID/TenantKey，使用现有飞书渠道键解析当前 IAM 成员；远端操作前后复核，停用、撤链、改绑及基础设施失败均不返回快照。Access 只是核验记录，不代替发布事务授权。
 - 身份证据：`pnpm check:go` 通过（`.tools/m3-feishu-mapping-check.log`）；真实 PG `go test -tags=integration -count=1 -run '^TestMappedReaderWithPostgresIdentity$' -v ./internal/feishudocs` 通过（`.tools/m3-feishu-mapping-db.log`）。初次夹具因重复 employee_id 失败，修正合成员工编号后通过。测试库/角色残留 0，17/agentos-m3 已停止；本片远端待确认。无 SQL/迁移修改，未重跑全量 test:db。
-- 下一片：实现持久同步与发布事务，在原生撤权和来源不可用时阻断旧引用；用已支持的纪要/价格表合成夹具贯穿读取、规范化和发布。完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
+- 身份远端：299467f CI 39395915886/39395910986 均 success。
+- 发布事务切片：Store.Publish 将同版本内容、单空间向量、ACL 和审计原子提交；复用现有写入规则，末尾重验同步权限、健康和授权期限。错误回滚并保留旧版本，重试幂等；仍未实现持久同步任务。契约单点见 [知识契约](../contracts/knowledge.md#原子发布已准备的快照)。
+- 发布证据：`pnpm check:go`、全量 `pnpm test:db` 均退出 0（`.tools/m3-publication-check.log`、`.tools/m3-publication-full-db.log`）。真实 PG 故障覆盖向量缺项、ACL 冲突、过期、错误世代和末步审计失败；另验重复请求和新版本替换。初次抽取函数的 err 作用域导致编译失败，修正后通过。本片远端待确认。
+- 下一片：实现持久同步任务与租约，在原生撤权和来源不可用时阻断旧引用；用已支持的纪要/价格表合成夹具贯穿读取、规范化和原子发布。完成恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

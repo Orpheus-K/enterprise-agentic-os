@@ -102,7 +102,7 @@ func (s *Store) approvalKnowledge(ctx context.Context, q database.Queries, id uu
 	return err
 }
 
-func (s *Store) prepareKnowledge(ctx context.Context, t *Task) ([]knowledge.Evidence, error) {
+func (s *Store) PrepareKnowledge(ctx context.Context, t *Task) ([]knowledge.Evidence, error) {
 	if s.retrieval == nil {
 		if t.KnowledgeRefs != nil {
 			return nil, ErrKnowledgeDenied
@@ -167,4 +167,12 @@ func knowledgeSources(text string, evidence []knowledge.Evidence) (string, error
 		return "", knowledge.ErrContextTooLarge
 	}
 	return b.String(), nil
+}
+
+func (s *Store) GroundTask(ctx context.Context, t *Task) (knowledge.Grounding, error) {
+	k, err := knowledge.New(s.db, s.tenant, s.app)
+	if err != nil {
+		return knowledge.Grounding{}, err
+	}
+	return k.Ground(ctx, t.Message.Identity, t.KnowledgeRefs, knowledge.Audience{})
 }

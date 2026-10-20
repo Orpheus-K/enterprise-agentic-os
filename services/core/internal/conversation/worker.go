@@ -30,7 +30,7 @@ type Sender interface {
 }
 type Worker struct {
 	Notifier  Notifier
-	Store     *Store
+	Store     ExecutionStore
 	Tools     *toolgateway.Gateway
 	Model     Model
 	Sender    Sender
@@ -43,8 +43,12 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	if err := w.Store.ExpireApprovals(ctx); err != nil {
 		return false, err
 	}
-	if worked, err := w.Store.NotifyOne(ctx, w.Notifier); err != nil || worked {
-		return worked, err
+	if notifications, ok := w.Store.(NotificationStore); ok {
+		if worked, err := notifications.NotifyOne(ctx, w.Notifier); err != nil || worked {
+			return worked, err
+		}
+	} else if w.Notifier != nil {
+		return false, ErrUnsupportedExecution
 	}
 	if err := w.Store.RecoverExpired(ctx); err != nil {
 		return false, err
@@ -61,6 +65,15 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	return true, err
 }
 func (w *Worker) processTask(ctx context.Context, t *Task) error {
+	skillStore, hasSkills := w.Store.(SkillExecutionStore)
+	knowledgeStore, hasKnowledge := w.Store.(KnowledgeExecutionStore)
+	if !hasSkills && (t.Skill.Name != "" || len(t.Routes) > 0 || len(t.History) > 0 || t.Tool != nil || t.QuoteVersion > 0 || t.State == ToolPending || t.State == ToolRunning) {
+		return ErrUnsupportedExecution
+	}
+	if !hasKnowledge && t.KnowledgeRefs != nil {
+		return ErrUnsupportedExecution
+	}
+
 	opts := []trace.SpanStartOption{trace.WithNewRoot(), trace.WithAttributes(attribute.String("task_id", t.ID.String()))}
 	if t.Ingress.IsValid() {
 		opts = append(opts, trace.WithLinks(trace.Link{SpanContext: t.Ingress}))
@@ -94,7 +107,7 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 		var turnModel ToolModel
 		var definitions []toolgateway.Definition
 		if t.Skill.Name != "" {
-			loaded, err := w.Store.LoadSkill(ctx, t)
+			loaded, err := skillStore.LoadSkill(ctx, t)
 			if err != nil {
 				return finish(Failed, "skill_unavailable")
 			}
@@ -131,7 +144,11 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 			}
 			return err
 		}
-		evidence, err := w.Store.prepareKnowledge(ctx, t)
+		var evidence []knowledge.Evidence
+		var err error
+		if hasKnowledge {
+			evidence, err = knowledgeStore.PrepareKnowledge(ctx, t)
+		}
 		if err != nil {
 			switch {
 			case errors.Is(err, errEmbeddingUnknown):
@@ -190,7 +207,7 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 			}
 			for _, d := range definitions {
 				if d.Ref.Name == turn.Call.Function.Name {
-					return w.Store.ScheduleTool(ctx, t, *turn.Call, d.Ref)
+					return skillStore.ScheduleTool(ctx, t, *turn.Call, d.Ref)
 				}
 			}
 			return finish(Failed, "unapproved_tool")
@@ -226,11 +243,7 @@ func (w *Worker) processTask(ctx context.Context, t *Task) error {
 			return finish(Failed, "quotation_render_invalid")
 		}
 		if t.KnowledgeRefs != nil {
-			k, err := knowledge.New(w.Store.db, w.Store.tenant, w.Store.app)
-			if err != nil {
-				return err
-			}
-			grounded, err := k.Ground(ctx, t.Message.Identity, t.KnowledgeRefs, knowledge.Audience{})
+			grounded, err := knowledgeStore.GroundTask(ctx, t)
 			if err != nil {
 				return err
 			}
@@ -324,6 +337,10 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) runTool(ctx context.Context, t *Task, finish func(State, string) error) error {
+	skillStore, ok := w.Store.(SkillExecutionStore)
+	if !ok {
+		return ErrUnsupportedExecution
+	}
 	if w.Tools == nil || t.Tool == nil {
 		if t.State == ToolPending {
 			return finish(Failed, "tool_runtime_unavailable")
@@ -356,7 +373,7 @@ func (w *Worker) runTool(ctx context.Context, t *Task, finish func(State, string
 		}
 		return finish(Unknown, "tool_result_unknown")
 	}
-	loaded, err := w.Store.LoadSkill(ctx, t)
+	loaded, err := skillStore.LoadSkill(ctx, t)
 	if err != nil {
 		return finish(Failed, "tool_skill_denied")
 	}
@@ -365,7 +382,7 @@ func (w *Worker) runTool(ctx context.Context, t *Task, finish func(State, string
 		if err != nil {
 			return finish(Failed, "quotation_invalid")
 		}
-		err = w.Store.SaveQuotation(ctx, t, draft)
+		err = skillStore.SaveQuotation(ctx, t, draft)
 		if errors.Is(err, ErrApprovalDenied) || errors.Is(err, ErrInvalidApproval) {
 			return finish(Failed, "quotation_policy_denied")
 		}
@@ -374,5 +391,5 @@ func (w *Worker) runTool(ctx context.Context, t *Task, finish func(State, string
 		}
 		return w.processTask(ctx, t)
 	}
-	return w.Store.CompleteTool(ctx, t, raw)
+	return skillStore.CompleteTool(ctx, t, raw)
 }

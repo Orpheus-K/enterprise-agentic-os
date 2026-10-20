@@ -63,7 +63,7 @@ func (s *Store) Enqueue(ctx context.Context, m Message) error {
 	}
 	var routeRefs []skills.Ref
 	if len(s.routes) > 0 {
-		summaries, err := s.routeSummaries(ctx, p, s.routes)
+		summaries, err := s.RouteSummaries(ctx, p, s.routes)
 		if err != nil {
 			return err
 		}

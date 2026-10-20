@@ -135,7 +135,13 @@ func TestOpenRetrievalValidatesSpaceAndRunsWorker(t *testing.T) {
 			}
 			sends := 0
 			channel.worker.Sender = retrievalTestSender(func(context.Context, string, string, string) error { sends++; return nil })
-			if err := channel.worker.Store.Enqueue(t.Context(), conversation.Message{EventID: "event", MessageID: "message", Text: "synthetic query", Fingerprint: "synthetic", Identity: identity.ExternalIdentity{TenantID: b.TenantID, Provider: "feishu", Issuer: b.Issuer(), Subject: "ou_test"}}); err != nil {
+			inbox, ok := channel.worker.Store.(interface {
+				Enqueue(context.Context, conversation.Message) error
+			})
+			if !ok {
+				t.Fatal("configured store has no inbox")
+			}
+			if err := inbox.Enqueue(t.Context(), conversation.Message{EventID: "event", MessageID: "message", Text: "synthetic query", Fingerprint: "synthetic", Identity: identity.ExternalIdentity{TenantID: b.TenantID, Provider: "feishu", Issuer: b.Issuer(), Subject: "ou_test"}}); err != nil {
 				t.Fatal(err)
 			}
 			if worked, err := channel.worker.ProcessOne(t.Context()); err != nil || !worked {

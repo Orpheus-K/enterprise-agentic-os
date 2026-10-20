@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +10,51 @@ const binary = path.resolve(
   "dist",
   process.platform === "win32" ? "agentos.exe" : "agentos",
 );
+// Identity inspection must stay offline even with unusable site configuration.
+const identities = [];
+for (const name of ["agentos", "agentos-migrate"]) {
+  const executable = path.resolve(
+    "dist",
+    process.platform === "win32" ? `${name}.exe` : name,
+  );
+  const env = {
+    ...process.env,
+    AGENTOS_CHANNEL_CONFIG: "missing-site-config.json",
+    AGENTOS_MIGRATION_DATABASE_URL: "invalid",
+    AGENTOS_HTTP_ADDR: "invalid",
+  };
+  const version = spawnSync(executable, ["--version"], {
+    env,
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(version.error, undefined);
+  assert.equal(version.status, 0, version.stderr);
+  const metadata = JSON.parse(version.stdout);
+  assert.equal(metadata.component, name);
+  assert.ok(
+    Number.isInteger(metadata.schema_version) && metadata.schema_version > 0,
+  );
+  assert.match(metadata.quotation_wasm_sha256, /^[0-9a-f]{64}$/);
+  assert.match(metadata.go_version, /^go[0-9]/);
+  assert.ok(metadata.os && metadata.architecture);
+  if (metadata.source !== null) {
+    assert.match(metadata.source.revision, /^[0-9a-f]{40,64}$/);
+    assert.equal(typeof metadata.source.modified, "boolean");
+  }
+  const invalid = spawnSync(executable, ["--version", "unexpected"], {
+    env,
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(invalid.status, 1);
+  identities.push(metadata);
+}
+assert.deepEqual(
+  { ...identities[0], component: "same" },
+  { ...identities[1], component: "same" },
+);
+
 const server = spawn(binary, [], {
   env: { ...process.env, AGENTOS_HTTP_ADDR: "127.0.0.1:0" },
   stdio: ["ignore", "pipe", "inherit"],

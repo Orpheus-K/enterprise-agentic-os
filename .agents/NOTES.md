@@ -10,11 +10,12 @@
 - 实现：R02/R10/R12、A06/A08、T08/T09、V07/V08 的来源读取边界；`internal/feishudocs` 显式绑定用户凭证，固定版本分页，前后重验身份与权限，拒绝坏游标、不完整块树和超限。只返回完整原始快照，不发布 ACL；单点契约见 [飞书文档](../contracts/feishu-docs.md)。
 - 判断：原生权限检查针对当前 token；应用可读或协作者列表不能直接成为员工 ACL。AppID 为可信配置绑定，userinfo 核对 OpenID/TenantKey。未知块保留原始对象，后续解析须显式支持或拒绝。
 - 本机证据：`pnpm check` 退出 0，含读取器合成 HTTP 测试，日志 `.tools/m3-feishu-docs-reader-check.log`。无 SQL/数据库变更，本片未重复运行 test:db；未真实租户联调，Windows 无 gcc，Linux race 待本片远端 CI。
-- 后续规范化：已实现页面/段落/标题/列表/待办的 text_run → knowledge.Content，按源树排序、保留源块 ID、绑定版本锚点；表格/图片/提及/链接/删除线等暂拒绝整份文档，不截断或丢弃后伪成功。限制与未支持类型以契约为准。
+- 后续规范化：已实现页面/段落/标题/列表/待办的 text_run 及未合并矩形表 → knowledge.Content，按源树排序、保留源块 ID、绑定版本锚点；合并/嵌套表、图片/提及/链接/删除线等暂拒绝整份文档，不截断或丢弃后伪成功。限制与未支持类型以契约为准。
 - 规范化证据：`pnpm check:go` 退出 0（`.tools/m3-feishu-normalize-check.log`）；补充 256 切片边界、空块与样式片段后，`go test -count=1 ./internal/feishudocs` 通过（`.tools/m3-feishu-normalize-tests.log`）。覆盖分页乱序、中文正文、版本锚点、未知内容、缺块和超限；无 SQL 变更，未重复数据库测试。
 - 列表切片：保留显式编号、连续同级 auto 编号和待办完成状态；为子块加入父列表上下文，避免丢失否定/条件。缺编号、缺状态、溢出及上下文超限拒绝。`pnpm check:go` 通过（`.tools/m3-feishu-lists-check.log`），含嵌套语义、编号中断/重启及拒绝部分发布测试；无 SQL 变更，未重复数据库测试。
 - 远端与评审：6b3960b CI 39391058510、2e8457a CI 39392608108/39392460431 均 success；新增列表代码尚待自身远端证据。草稿 [PR #2](https://github.com/Orpheus-K/enterprise-agentic-os/pull/2) 依赖 #1。
-- 下一片：补表格规范化；设计可信 IAM/用户凭证映射与持久同步，在原生撤权和来源不可用时阻断旧引用。完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
+- 表格切片：校验行列、cells/children 顺序、明确单位合并跨度；整表为一个 JSON 正文切片，保留表头标记、空单元格、转义字符及父级条件，不单独发布单元格。`pnpm check:go` 通过（`.tools/m3-feishu-tables-check.log`），覆盖价格表关系、缺合并信息/错误几何拒绝、类型错配和序列化后超限；无 SQL 变更，未重复数据库测试。本片远端尚未确认。
+- 下一片：设计可信 IAM/用户凭证映射与持久同步，在原生撤权和来源不可用时阻断旧引用；用已支持的纪要/价格表合成夹具贯穿读取、规范化和发布。完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

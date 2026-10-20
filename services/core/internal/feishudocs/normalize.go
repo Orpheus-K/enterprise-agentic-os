@@ -13,6 +13,16 @@ import (
 
 var ErrUnsupported = errors.New("unsupported Feishu document content")
 
+type normalizedBlock struct {
+	ID       string   `json:"block_id"`
+	Parent   string   `json:"parent_id"`
+	Children []string `json:"children"`
+	Type     int      `json:"block_type"`
+	body     string
+	sequence string
+	table    *documentTable
+}
+
 // Normalize produces version-bound plain text evidence, not rendered Markdown.
 // It performs no I/O and grants no access. Unsupported content rejects the whole
 // snapshot so that omitted evidence cannot silently change a document's meaning.
@@ -39,18 +49,10 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 	if err := completeTree(snapshot.Blocks); err != nil {
 		return fail, err
 	}
-	type node struct {
-		ID       string   `json:"block_id"`
-		Parent   string   `json:"parent_id"`
-		Children []string `json:"children"`
-		Type     int      `json:"block_type"`
-		body     string
-		sequence string
-	}
-	nodes := map[string]node{}
+	nodes := map[string]normalizedBlock{}
 	root := ""
 	for _, raw := range snapshot.Blocks {
-		var n node
+		var n normalizedBlock
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(raw, &n) != nil || json.Unmarshal(raw, &fields) != nil {
 			return fail, ErrInvalid
@@ -69,6 +71,10 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 			key = "ordered"
 		case n.Type == 17:
 			key = "todo"
+		case n.Type == 31:
+			key = "table"
+		case n.Type == 32:
+			key = "table_cell"
 		default:
 			return fail, ErrUnsupported
 		}
@@ -83,11 +89,24 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 				}
 			}
 		}
-		body, err := plainText(fields[key])
-		if err != nil {
-			return fail, err
+		if n.Type == 31 {
+			table, err := parseTable(fields[key], n.Children)
+			if err != nil {
+				return fail, err
+			}
+			n.table = table
+		} else if n.Type == 32 {
+			var cell map[string]json.RawMessage
+			if json.Unmarshal(fields[key], &cell) != nil || cell == nil || len(cell) != 0 {
+				return fail, ErrUnsupported
+			}
+		} else {
+			body, err := plainText(fields[key])
+			if err != nil {
+				return fail, err
+			}
+			n.body = strings.TrimSpace(body)
 		}
-		n.body = strings.TrimSpace(body)
 		if n.Type == 12 || n.Type == 13 || n.Type == 17 {
 			if n.body == "" {
 				return fail, ErrUnsupported
@@ -156,6 +175,19 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 			nodes[id] = n
 		}
 	}
+	for id, n := range nodes {
+		if n.Type == 32 && nodes[n.Parent].Type != 31 {
+			return fail, ErrInvalid
+		}
+		if n.Type == 31 {
+			body, err := tableText(n, nodes)
+			if err != nil {
+				return fail, err
+			}
+			n.body = body
+			nodes[id] = n
+		}
+	}
 	out := knowledge.Content{SourceID: source, DocumentID: snapshot.DocumentID,
 		Revision: int64(snapshot.Revision), Title: snapshot.Title}
 	// API pagination order is not document order. Traverse declared children
@@ -177,6 +209,11 @@ func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
 			}
 			out.Chunks = append(out.Chunks, knowledge.Chunk{ID: id, Body: body,
 				Anchor: "feishu-docx:" + snapshot.DocumentID + ":" + strconv.Itoa(snapshot.Revision) + ":" + id})
+		}
+		// The table is one evidence unit; detached cells would lose their
+		// row/column relationships and must not be separately searchable.
+		if n.Type == 31 {
+			continue
 		}
 		prefix := item.context
 		if n.Type == 12 || n.Type == 13 || n.Type == 17 {

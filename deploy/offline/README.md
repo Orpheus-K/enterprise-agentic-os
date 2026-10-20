@@ -22,4 +22,4 @@ python3 scripts/test-offline-linux.py /absolute/artifacts/agentos-linux
 
 SBOM.cdx.json 使用 CycloneDX 1.6，打包时以固定的上游 JSON Schema 离线验证结构；schema 来源、版本和哈希见 [验证数据](../../scripts/vendor/cyclonedx/README.md)。组件包含 Go 链接模块、运行时、前端生产依赖及二进制 SHA-256；Go h1 是独立属性，不当作归档文件哈希。前端是保守超集，不声明精确 tree-shaking 组成或未知的传递依赖图。SBOM 同样纳入 MANIFEST 文件校验；这不是签名、漏洞扫描或正式发行许可。
 
-测试复制到独立目录，用空 PATH 启动二进制，验证文件变更/缺失/额外文件拒绝、身份、SQLite 显式与重复迁移、备份恢复与覆盖拒绝、目标冲突、嵌入静态资源和缺租户就绪拒绝；Linux 额外验证符号链接拒绝，仅使用本机回环 HTTP。CI 分别在 Windows 和 Linux 上构建及安装。它不替代真实租户联调、配置/密钥联合恢复或完整安装环境矩阵。服务注册、发布签名、本项目发行许可与完整 Python/PG 离线包仍待后续交付切片。
+测试复制到独立目录，用空 PATH 启动二进制，验证文件变更/缺失/额外文件拒绝、身份、SQLite 显式与重复迁移、备份恢复与覆盖拒绝、目标冲突、嵌入静态资源和缺租户就绪拒绝；Linux 额外验证符号链接拒绝，仅使用本机回环 HTTP。CI 分别在 Windows 和 Linux 上构建及安装。它不替代真实租户联调、配置/密钥联合恢复或完整安装环境矩阵。Windows 服务注册脚本见[独立运维说明](../windows/README.md)，仅通过替身测试，不包含在离线包。真实服务安装、发布签名、本项目发行许可与完整 Python/PG 离线包仍待现场或后续交付验收。

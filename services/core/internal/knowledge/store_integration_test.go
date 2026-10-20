@@ -302,7 +302,7 @@ func TestKnowledgeTenantIsolationAndRestart(t *testing.T) {
 	}
 	f.read(t, true)
 	var protected int
-	if err := f.pg.Admin.QueryRow(t.Context(), `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='knowledge' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity`).Scan(&protected); err != nil || protected != 11 {
+	if err := f.pg.Admin.QueryRow(t.Context(), `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='knowledge' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity`).Scan(&protected); err != nil || protected != 12 {
 		t.Fatal("knowledge RLS missing", protected, err)
 	}
 }

@@ -1,6 +1,28 @@
 # 约束权限感知知识管道
 
-对齐 R02/R10/R12、A05/A06/A08、V06—V08；依据 [知识架构](../enterprise-agentic-os-architecture/05-权限知识与计算隔离.md)。本文件为 M3 实现契约。schema 15—19 提供 PG 知识存储、版本化写入/授权读取、来源健康世代、授权向量候选检索及会话引用检查点；可选会话检索调用 Embedding 并在模型、工具、审批与交付边界重新授权。原生来源同步与批量嵌入发布仍未实现。
+对齐 R02/R10/R12/R15/R18、A05/A06/A08/A10、V06—V08/V13；依据 [知识架构](../enterprise-agentic-os-architecture/05-权限知识与计算隔离.md)。本文件为 M3 实现契约。schema 15—22 提供 PG 知识存储、版本化写入/授权读取、来源健康、向量检索、会话引用及来源同步检查点；schema 25 增加独立授权的知识审计查询和基础统计。可选会话检索在模型、工具、审批与交付边界重新授权；原生来源与合成链路范围见 [飞书文档契约](feishu-docs.md)，真实租户联调尚未完成。
+
+## 知识审计读取与统计
+
+独立能力 `knowledge.audit.read` 按 tenant/member/app 由管理员授予，runtime 不能自行授予。任务 `audit.read`、知识内容权限、来源同步权或 `knowledge.reconcile` 都不隐含此能力。审计权限也不赋予内容读取或同步权限；历史元数据统计不依赖来源当前健康状态。SQLite 未实现知识库，不开放此能力或接口。
+
+knowledge.audit 和 search_audit 将 INSERT 与 SELECT 分为独立 RLS 策略；原有“本人可写”策略不能因新增 SELECT 被扩展为“本人可读”。查询要求当前租户/安装、启用成员、当前外部身份映射和独立能力。库方法前后重验映射及授权；撤权、改绑或留痕失败不返回部分结果。每次成功分页/统计与 knowledge.audit_reads 留痕同事务；该表只向 runtime 授予 INSERT，不混入业务读取/检索计数。
+
+POST `/api/ops/knowledge/stats` 使用现有运维 Bearer/配置身份，拒绝请求指定成员/租户。请求为 `[from,to)` 的 RFC3339 时间窗口，最长 92 天，必须对齐微秒：
+
+```json
+{"from":"2026-10-01T00:00:00Z","to":"2026-10-22T00:00:00Z"}
+```
+
+响应含同一查询快照下的 read_checks、searches、empty_searches、requested_candidates、returned_candidates。read_checks 仅计已提交的 `action=read`，包括引用验证和重复授权检查，并非用户点击、去重文档或业务任务数；searches 计已成功提交的 Search，包括返回零候选；失败/回滚请求不在该表中，不伪造失败率。requested_candidates 是各次请求上限之和，returned_candidates 是实际返回数量之和，两者不能推算召回率、ROI 或模型质量。没有 Prompt、正文、查询向量或成员明细。
+
+POST `/api/ops/knowledge/audit` 在同一窗口增加 `kind`（events 或 searches）、`limit`（1—100）及可选 UUID `after`。按 recorded_at/id 稳定分页；未知、跨范围或跨安装游标返回空页，不探测他域事件。next_after 仅在有后续记录时提供。events 返回事件标识、时间、动作、来源/文档标识和版本；searches 返回事件标识、时间、空间标识和请求/返回数量；不返回成员标识或内容。示例：
+
+```json
+{"from":"2026-10-01T00:00:00Z","to":"2026-10-22T00:00:00Z","kind":"searches","limit":50}
+```
+
+两接口均为 no-store；缺认证 401、缺独立能力 403、非法窗口/字段 400、存储或留痕故障 503 且无结果。分页不是跨请求的冻结快照，之后提交的新事件可能在后续查询出现；统计两表通过同一 SQL 语句获得一致快照。数据库测试使用合成内容和真实 PG，不能替代真实租户运营口径验收。
 
 ## 分离内容与权限
 

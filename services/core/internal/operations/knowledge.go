@@ -19,6 +19,18 @@ func (a *API) knowledgeOperation(ctx context.Context, r *http.Request, w http.Re
 		return nil
 	}
 	switch r.URL.Path {
+	case "/api/ops/knowledge/audit":
+		var in knowledge.AuditQuery
+		if err := decode(&in); err != nil {
+			return nil, err
+		}
+		return a.knowledge.ReadAudit(ctx, a.identity, in)
+	case "/api/ops/knowledge/stats":
+		var in knowledge.AuditWindow
+		if err := decode(&in); err != nil {
+			return nil, err
+		}
+		return a.knowledge.Usage(ctx, a.identity, in)
 	case "/api/ops/knowledge/sync/inspect":
 		var in struct {
 			SourceID   uuid.UUID `json:"source_id"`

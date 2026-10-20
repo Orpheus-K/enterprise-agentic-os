@@ -101,8 +101,7 @@ type preparedSource struct {
 	oauthKeys  *feishudocs.OAuthKeys
 }
 
-func (c Config) sourceCredentials() ([]preparedSource, error) {
-	var out []preparedSource
+func (c Config) loadOAuthKeys() (*feishudocs.OAuthKeys, error) {
 	var keys *feishudocs.OAuthKeys
 	if c.OAuth != nil {
 		material := map[string][]byte{}
@@ -127,6 +126,15 @@ func (c Config) sourceCredentials() ([]preparedSource, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	return keys, nil
+}
+
+func (c Config) sourceCredentials() ([]preparedSource, error) {
+	var out []preparedSource
+	keys, err := c.loadOAuthKeys()
+	if err != nil {
+		return nil, err
 	}
 	for _, config := range c.Sources {
 		credential := func(user SourceUser) (feishudocs.Credential, error) {

@@ -75,13 +75,16 @@ func (s *oauthLedger) load(ctx context.Context) (int64, oauthEnvelope, error) {
 	return revision, envelope, nil
 }
 
-func (s *oauthLedger) save(ctx context.Context, expected int64, envelope oauthEnvelope, action string) error {
+func (s *oauthLedger) save(ctx context.Context, expected int64, envelope oauthEnvelope, action, evidence string) error {
 	if expected < 0 || expected == math.MaxInt64 || !identifier(envelope.KeyID) || len(envelope.Ciphertext) < 29 || len(envelope.Ciphertext) > maxOAuthSecrets+28 {
 		return ErrOAuthInvalid
 	}
 	switch action {
-	case "authorize", "exchange", "activate", "refresh", "revoke", "revoked":
+	case "authorize", "exchange", "activate", "refresh", "revoke", "revoked", "reconciled":
 	default:
+		return ErrOAuthInvalid
+	}
+	if action == "reconciled" && !oauthEvidence(evidence) || action != "reconciled" && evidence != "" {
 		return ErrOAuthInvalid
 	}
 	return s.within(ctx, func(q database.Queries, p identity.Principal) error {
@@ -102,7 +105,7 @@ func (s *oauthLedger) save(ctx context.Context, expected int64, envelope oauthEn
 		if rows != 1 {
 			return ErrOAuthConflict
 		}
-		_, err := q.Exec(ctx, `INSERT INTO channel.oauth_audit(tenant_id,app_id,tenant_key,open_id,member_id,revision,action) VALUES($1,$2,$3,$4,$5,$6,$7)`, s.tenant, s.user.AppID, s.user.TenantKey, s.user.OpenID, p.MemberID, expected+1, action)
+		_, err := q.Exec(ctx, `INSERT INTO channel.oauth_audit(tenant_id,app_id,tenant_key,open_id,member_id,revision,action,evidence_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, s.tenant, s.user.AppID, s.user.TenantKey, s.user.OpenID, p.MemberID, expected+1, action, evidence)
 		return err
 	})
 }

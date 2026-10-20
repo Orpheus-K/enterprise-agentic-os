@@ -3,6 +3,7 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"agentos.local/core/internal/database"
@@ -97,5 +99,33 @@ func TestOpenSourcesValidatesWithoutScheduling(t *testing.T) {
 			channel.Close()
 		}
 		t.Fatal("missing OAuth authorization did not fail startup", err)
+	}
+	var output bytes.Buffer
+	begin := `{"action":"begin","open_id":"ou_sync","redirect_uri":"https://example.test/callback","scope":"offline_access"}`
+	if err := RunOAuth(t.Context(), path, strings.NewReader(begin), &output); err != nil {
+		t.Fatal("local OAuth begin", err)
+	}
+	if !strings.Contains(output.String(), "authorization_url") {
+		t.Fatal("authorization URL missing")
+	}
+	output.Reset()
+	if err := RunOAuth(t.Context(), path, strings.NewReader(`{"action":"status","open_id":"ou_sync"}`), &output); err != nil || !strings.Contains(output.String(), `"stage":"pending"`) {
+		t.Fatal("persisted status", err)
+	}
+	output.Reset()
+	if err := RunOAuth(t.Context(), path, strings.NewReader(`{"action":"complete","open_id":"ou_sync","state":"wrong-state","code":"synthetic-code"}`), &output); !errors.Is(err, feishudocs.ErrOAuthInvalid) || output.Len() != 0 {
+		t.Fatal("wrong callback accepted", err)
+	}
+	if err := RunOAuth(t.Context(), path, strings.NewReader(`{"action":"status","open_id":"ou_unconfigured"}`), &output); err == nil {
+		t.Fatal("unconfigured user accepted")
+	}
+	if err := RunOAuth(t.Context(), path, strings.NewReader(`{"action":"revoke","open_id":"ou_sync"}`), &output); err != nil {
+		t.Fatal("pending session revoke", err)
+	}
+	if channel, err := Open(t.Context(), path, logger); !errors.Is(err, feishudocs.ErrOAuthRevoked) {
+		if channel != nil {
+			channel.Close()
+		}
+		t.Fatal("command revocation not consumed", err)
 	}
 }

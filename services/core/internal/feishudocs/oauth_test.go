@@ -38,7 +38,7 @@ func (m *oauthMemory) load(context.Context) (int64, oauthEnvelope, error) {
 	}
 	return m.revision, oauthEnvelope{KeyID: m.envelope.KeyID, Ciphertext: bytes.Clone(m.envelope.Ciphertext)}, nil
 }
-func (m *oauthMemory) save(_ context.Context, revision int64, envelope oauthEnvelope, action string) error {
+func (m *oauthMemory) save(_ context.Context, revision int64, envelope oauthEnvelope, action, evidence string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failAction == action {

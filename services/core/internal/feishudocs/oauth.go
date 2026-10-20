@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"agentos.local/core/internal/database"
@@ -19,7 +21,7 @@ import (
 
 type oauthPersistence interface {
 	load(context.Context) (int64, oauthEnvelope, error)
-	save(context.Context, int64, oauthEnvelope, string) error
+	save(context.Context, int64, oauthEnvelope, string, string) error
 }
 
 type oauthState struct {
@@ -95,6 +97,10 @@ func (o *OAuth) load(ctx context.Context) (int64, oauthState, error) {
 }
 
 func (o *OAuth) save(ctx context.Context, revision int64, state oauthState, action string) error {
+	return o.saveEvidence(ctx, revision, state, action, "")
+}
+
+func (o *OAuth) saveEvidence(ctx context.Context, revision int64, state oauthState, action, evidence string) error {
 	plain, err := json.Marshal(state)
 	if err != nil {
 		return ErrOAuthSecrets
@@ -104,7 +110,48 @@ func (o *OAuth) save(ctx context.Context, revision int64, state oauthState, acti
 	if err != nil {
 		return err
 	}
-	return o.store.save(ctx, revision, envelope, action)
+	return o.store.save(ctx, revision, envelope, action, evidence)
+}
+
+type OAuthStatus struct {
+	Revision      int64     `json:"revision"`
+	Stage         string    `json:"stage"`
+	RemoteUnknown bool      `json:"remote_unknown"`
+	ExpiresAt     time.Time `json:"expires_at,omitempty"`
+}
+
+func (o *OAuth) Inspect(ctx context.Context) (OAuthStatus, error) {
+	revision, record, err := o.load(ctx)
+	if err != nil {
+		return OAuthStatus{}, err
+	}
+	return OAuthStatus{Revision: revision, Stage: record.Stage, RemoteUnknown: record.RemoteUnknown, ExpiresAt: record.Tokens.ExpiresAt}, nil
+}
+
+func oauthEvidence(value string) bool {
+	if len(value) != 64 || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+// ConfirmProviderRevoked records a trusted operator's external verification;
+// a hash is evidence provenance, not an automatic proof of provider revocation.
+// Only a locally revoked unknown generation can be reconciled. It never retries
+// an exchange, refreshes a token, or restores the old access authorization.
+func (o *OAuth) ConfirmProviderRevoked(ctx context.Context, expected int64, evidenceSHA256 string) error {
+	if expected < 1 || !oauthEvidence(evidenceSHA256) {
+		return ErrOAuthInvalid
+	}
+	revision, record, err := o.load(ctx)
+	if err != nil {
+		return err
+	}
+	if revision != expected || record.Stage != "revoked" || !record.RemoteUnknown {
+		return ErrOAuthConflict
+	}
+	return o.saveEvidence(ctx, revision, oauthState{Stage: "revoked"}, "reconciled", evidenceSHA256)
 }
 
 // Begin persists state and PKCE before returning the authorization URL. A new

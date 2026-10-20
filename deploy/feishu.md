@@ -104,7 +104,42 @@
 
 静态 Token 必须是各绑定用户自己的 user access token；静态模式不自动刷新，过期使来源不可用，需要轮换环境变量并重启。候选收件人不是授权名单，执行器逐个验证原生有效权限。配置变更先停旧实例；未知调用须经受控核对，不能通过改配置或清表绕过。轮询与证明有效期、类型限制及失败语义以 [来源契约](../contracts/feishu-docs.md) 为准。
 
-OAuth 来源可将单个 owner/recipient 改为 `{"open_id":"ou_sync","use_oauth":true}`，删除该用户的 access_token_env，并在顶层配置 `"oauth":{"active_key_id":"v1","key_envs":{"v1":"FEISHU_OAUTH_KEY_V1"}}`。环境引用值为安全生成的 32 字节密钥的标准 Base64；应用密钥仍来自 app_secret_env。每个 key ID 必须固定对应同一密钥材料，轮换新增 ID 并保留旧钥用于历史密文和备份。缺钥、未完成授权、未知状态或完全过期时启动失败；SQLite 不支持该来源配置。当前生命周期库与来源消费已测试，受控授权管理命令尚待实现，不通过手工造密文或清表配置授权。
+OAuth 来源可将单个 owner/recipient 改为 `{"open_id":"ou_sync","use_oauth":true}`，删除该用户的 access_token_env，并在顶层配置 `"oauth":{"active_key_id":"v1","key_envs":{"v1":"FEISHU_OAUTH_KEY_V1"}}`。环境引用值为安全生成的 32 字节密钥的标准 Base64；应用密钥仍来自 app_secret_env。每个 key ID 必须固定对应同一密钥材料，轮换新增 ID 并保留旧钥用于历史密文和备份。缺钥、未完成授权、未知状态或完全过期时启动失败；SQLite 不支持该来源配置。授权管理使用下述本地命令，不通过手工造密文或清表配置授权。
+
+### 本地 OAuth 管理
+
+设置 AGENTOS_CHANNEL_CONFIG 为上述可信配置文件，运行 `agentos --oauth`，从标准输入提交一个 JSON 对象。命令不启动 HTTP、聊天 Worker 或来源轮询；不接受授权码/Token 作为命令行参数。请求最多 32 KiB，拒绝未知字段、尾随对象和动作字段混用；操作失败非零退出，不返回成功对象。
+
+这是本地管理员入口：持有安装配置、runtime 数据库凭证、应用密钥和加密密钥的操作员可代管配置中的 use_oauth 用户。不是公网自助登录 API，不应直接接匿名 HTTP。账本仍核对该用户当前 IAM，审计成员指代受托凭证的绑定成员；不声称已认证操作系统操作者的个人身份。只需运行数据库凭证，不用迁移/超级用户。限制配置文件、环境和 stdin 的系统访问权限，不把回调 URL、授权码或输出授权链接写入运维日志。
+
+依次使用下列请求，示例值均为占位符：
+
+```json
+{"action":"begin","open_id":"ou_sync","redirect_uri":"https://your-approved-host/callback","scope":"docx:document:readonly offline_access"}
+```
+
+scope 必须是已批准的最小权限集合，示例不代表所有来源所需权限已齐全；回调地址需在飞书应用预先登记。begin 返回 authorization_url，交由绑定用户在浏览器授权。本轮未访问真实授权地址。受控回调页面应只让操作员安全取得 code/state，不把值写入公开日志；再从 stdin 提交：
+
+```json
+{"action":"complete","open_id":"ou_sync","state":"callback-state","code":"one-use-code"}
+```
+
+Complete 成功才可启动 use_oauth 来源；读取时自动处理已过期 access_token 的刷新。状态与撤销：
+
+```json
+{"action":"status","open_id":"ou_sync"}
+{"action":"revoke","open_id":"ou_sync"}
+```
+
+两行是两次独立命令，不得一起传入。status 返回 revision/stage/expires_at/remote_unknown，不返回 Token。撤销本地先阻断，再处理供应商；远端失败可重试 revoke，不能重试已处于 exchanging/refreshing 的一次性调用。
+
+若 status 表明 revoked 且 remote_unknown=true，须先在供应商侧确认该用户该应用的未知授权及已发 Token 全部撤销/失效，保留受控证据。计算其 SHA-256，以 status 的当前 revision 提交下列**人工决定**，摘要仅作溯源，不是系统自动验证外部事实：
+
+```json
+{"action":"confirm-provider-revoked","open_id":"ou_sync","revision":7,"evidence_sha256":"64-lowercase-hex-characters-of-reviewed-evidence"}
+```
+
+示例摘要故意不可执行，必须替换为真实已核对证据的 64 位十六进制摘要。核对只清除未知标记，保留 revoked；之后再 begin。过期版本、缺证据和审计失败拒绝，不清表、不恢复旧 Token。完整状态与加密边界见 [OAuth 契约](../contracts/feishu-docs.md#生命周期与读取)。
 
 同步任务查询：向 `/api/ops/knowledge/sync/inspect` POST `{"source_id":"配置中的来源 UUID","document_id":"配置中的原生文档 ID"}`，使用既有运维 Bearer。运维绑定成员须具有该来源同步权限及 `knowledge.reconcile` 授权。读取返回的 request_revision、generation、config_hash 与输入摘要，结合供应商证据再调用核对入口；pending 或租约过期本身不能作为 not_sent 的证据。接口契约见[同步任务查询](../contracts/knowledge.md#同步任务查询)。
 

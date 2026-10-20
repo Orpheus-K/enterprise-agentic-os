@@ -5,6 +5,8 @@ package feishudocs
 import (
 	"bytes"
 	"errors"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +96,54 @@ func TestOAuthLifecyclePostgres(t *testing.T) {
 	if err := open(oauthTestKeys(t, "new")).CheckReady(t.Context()); !errors.Is(err, ErrOAuthRevoked) {
 		t.Fatal("revocation not persisted", err)
 	}
+	state := oauthBegin(t, o)
+	o.provider.client.Transport = oauthRoundTrip(func(*http.Request) (*http.Response, error) { return nil, errors.New("synthetic lost response") })
+	if err := o.Complete(t.Context(), state, "code"); !errors.Is(err, ErrOAuthUncertain) {
+		t.Fatal(err)
+	}
+	if err := o.Revoke(t.Context()); !errors.Is(err, ErrOAuthUncertain) {
+		t.Fatal("unknown falsely revoked", err)
+	}
+	status, err := o.Inspect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := strings.Repeat("a", 64)
+	if err := o.ConfirmProviderRevoked(t.Context(), status.Revision-1, evidence); !errors.Is(err, ErrOAuthConflict) {
+		t.Fatal("stale review accepted", err)
+	}
+	if err := o.ConfirmProviderRevoked(t.Context(), status.Revision, ""); !errors.Is(err, ErrOAuthInvalid) {
+		t.Fatal("missing evidence accepted", err)
+	}
+	if _, err := pg.Admin.Exec(t.Context(), `ALTER TABLE channel.oauth_audit ADD CONSTRAINT synthetic_reconcile_failure CHECK(action<>'reconciled')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.ConfirmProviderRevoked(t.Context(), status.Revision, evidence); err == nil {
+		t.Fatal("audit failure ignored")
+	}
+	unchanged, err := o.Inspect(t.Context())
+	if err != nil || unchanged.Revision != status.Revision || !unchanged.RemoteUnknown {
+		t.Fatal("audit failure cleared unknown", err)
+	}
+	if _, err := pg.Admin.Exec(t.Context(), `ALTER TABLE channel.oauth_audit DROP CONSTRAINT synthetic_reconcile_failure`); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.ConfirmProviderRevoked(t.Context(), status.Revision, evidence); err != nil {
+		t.Fatal(err)
+	}
+	var recorded string
+	if err := pg.Admin.QueryRow(t.Context(), `SELECT evidence_hash FROM channel.oauth_audit WHERE action='reconciled'`).Scan(&recorded); err != nil || recorded != evidence {
+		t.Fatal("evidence not retained", err)
+	}
+	if err := o.CheckReady(t.Context()); !errors.Is(err, ErrOAuthRevoked) {
+		t.Fatal("review restored old authorization", err)
+	}
+	if err := o.ConfirmProviderRevoked(t.Context(), status.Revision, evidence); !errors.Is(err, ErrOAuthConflict) {
+		t.Fatal("review replayed", err)
+	}
+	if _, err := o.Begin(t.Context(), "https://example.test/callback", oauthTestScope); err != nil {
+		t.Fatal("new authorization still blocked", err)
+	}
 }
 
 func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
@@ -141,10 +191,10 @@ func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := seal(1, "access-secret refresh-secret")
-	if err := ledger.save(t.Context(), 0, first, "authorize"); err != nil {
+	if err := ledger.save(t.Context(), 0, first, "authorize", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := ledger.save(t.Context(), 0, first, "authorize"); !errors.Is(err, ErrOAuthConflict) {
+	if err := ledger.save(t.Context(), 0, first, "authorize", ""); !errors.Is(err, ErrOAuthConflict) {
 		t.Fatal("duplicate initialization", err)
 	}
 	revision, envelope, err := ledger.load(t.Context())
@@ -154,7 +204,7 @@ func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
 	second := seal(2, "rotated-secret")
 	results := make(chan error, 2)
 	for range 2 {
-		go func() { results <- ledger.save(t.Context(), 1, second, "exchange") }()
+		go func() { results <- ledger.save(t.Context(), 1, second, "exchange", "") }()
 	}
 	success, conflicts := 0, 0
 	for range 2 {
@@ -176,7 +226,7 @@ func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
 	}
 	// Audit failure must roll back the encrypted state transition.
 	exec(`ALTER TABLE channel.oauth_audit ADD CONSTRAINT synthetic_failure CHECK(action<>'refresh')`)
-	if err := ledger.save(t.Context(), 2, seal(3, "must-not-commit"), "refresh"); err == nil {
+	if err := ledger.save(t.Context(), 2, seal(3, "must-not-commit"), "refresh", ""); err == nil {
 		t.Fatal("audit failure swallowed")
 	}
 	revision, _, err = ledger.load(t.Context())
@@ -215,11 +265,11 @@ func TestOAuthLedgerEncryptedCASAndAuthorization(t *testing.T) {
 			if err == nil || len(e.Ciphertext) != 0 {
 				t.Fatal("revoked/remapped identity obtained ciphertext")
 			}
-			if err := ledger.save(t.Context(), 2, seal(3, "blocked"), "revoke"); err == nil {
+			if err := ledger.save(t.Context(), 2, seal(3, "blocked"), "revoke", ""); err == nil {
 				t.Fatal("revoked/remapped identity changed credentials")
 			}
 			if mode == "remap" {
-				if err := ledger.save(t.Context(), 0, seal(1, "hijack"), "authorize"); !errors.Is(err, ErrOAuthConflict) {
+				if err := ledger.save(t.Context(), 0, seal(1, "hijack"), "authorize", ""); !errors.Is(err, ErrOAuthConflict) {
 					t.Fatal("remap overwrote prior owner", err)
 				}
 			} else if !errors.Is(err, identity.ErrUnauthenticated) {

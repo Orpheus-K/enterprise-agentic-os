@@ -30,8 +30,13 @@ func run(logger *slog.Logger) error {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		return buildinfo.Write(os.Stdout, "agentos")
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--oauth" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		return bootstrap.RunOAuth(ctx, os.Getenv("AGENTOS_CHANNEL_CONFIG"), os.Stdin, os.Stdout)
+	}
 	if len(os.Args) != 1 {
-		return errors.New("agentos accepts only --version or no arguments")
+		return errors.New("agentos accepts --version, --oauth (JSON on stdin), or no arguments")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -5,7 +5,55 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
+
+	"github.com/pressly/goose/v3"
 )
+
+func TestUpgradePreservesIdentity(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "upgrade.db")
+	db, err := connect(ctx, path, "rwc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	source, err := migrations.ReadFile("migrations/00001_identity.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := goose.NewProvider(goose.DialectSQLite3, db,
+		fstest.MapFS{"00001_identity.sql": &fstest.MapFile{Data: source}},
+		goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO iam_tenants(id,name) VALUES('tenant','retained')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	current, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer current.Close()
+	var name string
+	if err := current.QueryRowContext(ctx, "SELECT name FROM iam_tenants WHERE id='tenant'").Scan(&name); err != nil || name != "retained" {
+		t.Fatalf("identity lost during migration: %q %v", name, err)
+	}
+	var count int
+	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_tasks").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("task table unavailable after upgrade: %d %v", count, err)
+	}
+}
 
 func TestExplicitMigrationAndPersistence(t *testing.T) {
 	ctx := context.Background()

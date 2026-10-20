@@ -45,8 +45,9 @@ VALUES($1,$2,$3,$4,$5,$6,'pending') ON CONFLICT DO NOTHING`, s.tenant, s.app, so
 		}
 		var oldRevision int64
 		var oldHash string
-		if err := q.QueryRow(ctx, `SELECT request_revision,config_hash FROM knowledge.sync_jobs
-WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 FOR UPDATE`, s.tenant, s.app, source, document).Scan(&oldRevision, &oldHash); err != nil {
+		var externalPending bool
+		if err := q.QueryRow(ctx, `SELECT request_revision,config_hash,embedding_pending FROM knowledge.sync_jobs
+WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 FOR UPDATE`, s.tenant, s.app, source, document).Scan(&oldRevision, &oldHash, &externalPending); err != nil {
 			return err
 		}
 		if err := s.syncAllowed(ctx, q, source); err != nil {
@@ -61,8 +62,12 @@ WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 FOR UPDATE`
 			}
 			return nil
 		}
+		if externalPending {
+			return ErrConflict
+		}
 		if _, err := q.Exec(ctx, `UPDATE knowledge.sync_jobs SET request_revision=$5,config_hash=$6,state='pending',
-generation=generation+1,lease_token=NULL,lease_until='-infinity',publication_hash=''
+generation=generation+1,lease_token=NULL,lease_until='-infinity',publication_hash='',
+embedding_input=NULL,embedding_vectors=NULL,embedding_pending=false
 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4`, s.tenant, s.app, source, document, revision, configHash); err != nil {
 			return err
 		}
@@ -83,6 +88,7 @@ func (s *Store) ClaimSync(ctx context.Context, actor identity.ExternalIdentity, 
 		}
 		err := q.QueryRow(ctx, `SELECT document_id,request_revision FROM knowledge.sync_jobs
 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND config_hash=$4
+AND NOT embedding_pending
 AND (state='pending' OR (state='running' AND lease_until<=clock_timestamp()))
 ORDER BY document_id FOR UPDATE SKIP LOCKED LIMIT 1`, s.tenant, s.app, source, configHash).Scan(&out.DocumentID, &out.RequestRevision)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -122,11 +128,12 @@ func (s *Store) PublishSync(ctx context.Context, actor identity.ExternalIdentity
 	}
 	return s.within(ctx, actor, func(q database.Queries) error {
 		var state, published string
-		var active bool
-		err := q.QueryRow(ctx, `SELECT state,publication_hash,lease_until>clock_timestamp() FROM knowledge.sync_jobs
+		var active, pending bool
+		var input, vectors []byte
+		err := q.QueryRow(ctx, `SELECT state,publication_hash,lease_until>clock_timestamp(),embedding_pending,embedding_input,embedding_vectors FROM knowledge.sync_jobs
 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4
 AND request_revision=$5 AND config_hash=$6 AND generation=$7 AND lease_token=$8 FOR UPDATE`,
-			s.tenant, s.app, lease.SourceID, lease.DocumentID, lease.RequestRevision, lease.ConfigHash, lease.Generation, lease.Token).Scan(&state, &published, &active)
+			s.tenant, s.app, lease.SourceID, lease.DocumentID, lease.RequestRevision, lease.ConfigHash, lease.Generation, lease.Token).Scan(&state, &published, &active, &pending, &input, &vectors)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrConflict
 		}
@@ -139,8 +146,17 @@ AND request_revision=$5 AND config_hash=$6 AND generation=$7 AND lease_token=$8 
 		if state == "completed" && published == hash {
 			return nil
 		}
-		if state != "running" || !active {
+		if state != "running" || !active || pending {
 			return ErrConflict
+		}
+		if len(input) != 0 {
+			checkpoint, err := decodeEmbedding(input, vectors)
+			if err != nil {
+				return err
+			}
+			if !sameDigest(checkpoint.Content, p.Content) || !sameDigest(checkpoint.Vectors, p.Vectors) {
+				return ErrConflict
+			}
 		}
 		if err := s.publish(ctx, q, p); err != nil {
 			return err

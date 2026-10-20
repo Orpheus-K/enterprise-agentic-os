@@ -23,7 +23,10 @@
 - 发布远端：f4edd06 CI 39397429247/39397424216 均 success。
 - 同步任务切片（schema 20）：新增强制 RLS 的 sync_jobs；持久调度版本/配置摘要、领取世代/Token、过期接管；PublishSync 把三通道发布、任务完成与审计放在同一事务，末尾租约过期或完成审计故障均回滚。相同完成请求可核对未知提交，不接受旧世代/旧配置或不同内容。尚无后台 Worker、原生游标或 Embedding 意图检查点。契约见 [同步围栏](../contracts/knowledge.md#持久同步任务与发布围栏)。
 - 同步任务证据：`pnpm check` 通过（`.tools/m3-sync-jobs-check.log`）；定向真实 PG 恢复/并发/围栏用例通过（`m3-sync-jobs-targeted.log`）。全量 `pnpm test:db` 仅知识模块旧 RLS 表数量断言失败（9→实际10，其余模块通过，`m3-sync-jobs-full-db.log`）；按新迁移更新断言后重跑全部知识模块 integration 测试通过（`m3-sync-jobs-knowledge-db.log`），未再次重跑无关模块。测试库/角色残留 0，17/agentos-m3 已停止。新迁移尚待远端 CI；历史 schema-18 备份演练不覆盖 schema 20。
-- 下一片：增加外部调用意图和未知结果核对，接入运行时调度配置与来源健康/权限检查；用已支持的纪要/价格表合成夹具贯穿读取、规范化和带围栏发布。不得以过期接管自动重放未知 Embedding。SQLite 范围仍待决策。
+- 同步任务远端：6d3755b PR CI 39399262983 completed/success。
+- Embedding 检查点（schema 21）：BeginSyncEmbedding 先保存整批意图与内容/空间；SaveSyncEmbedding 验完整切片集并原子保存向量/审计。未知 pending 不允许过期接管或新请求覆盖；完整结果可接管复用，PublishSync 校验内容/向量一致，ACL 必须重新核验。尚无人工核对入口或后台 Worker，不能视为运行时同步已完成。
+- 检查点证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-sync-embedding-check.log`、`m3-sync-embedding-full-db.log`）；定向 `TestSync*` 通过（`m3-sync-embedding-targeted.log`）。覆盖未知不重放、迟到拒绝、部分向量拒绝、审计故障回滚、幂等保存及恢复发布。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认；备份演练仍未覆盖 schema 21。
+- 下一片：补未知结果的受控核对入口，接入运行时调度配置与来源健康/权限检查；用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和带围栏发布。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

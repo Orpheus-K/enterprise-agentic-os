@@ -16,11 +16,25 @@ func New(db *sql.DB) *Repository { return &Repository{db: db} }
 // Resolve checks the complete mapping and active membership in one snapshot.
 // It grants no business capability; each domain transaction must reauthorize.
 func (r *Repository) Resolve(ctx context.Context, external identity.ExternalIdentity) (identity.Principal, error) {
+	return resolve(ctx, r.db, external)
+}
+
+// ResolveIn checks identity in a domain-owned transaction. It supplies no SQL
+// isolation context: the caller must still scope every business query explicitly.
+func (r *Repository) ResolveIn(ctx context.Context, tx *sql.Tx, external identity.ExternalIdentity) (identity.Principal, error) {
+	return resolve(ctx, tx, external)
+}
+
+type rowQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func resolve(ctx context.Context, q rowQuerier, external identity.ExternalIdentity) (identity.Principal, error) {
 	if err := external.Validate(); err != nil {
 		return identity.Principal{}, err
 	}
 	var member uuid.UUID
-	err := r.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 SELECT l.member_id FROM iam_identity_links l
 JOIN iam_members m ON m.tenant_id=l.tenant_id AND m.id=l.member_id
 JOIN iam_tenants t ON t.id=l.tenant_id

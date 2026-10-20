@@ -17,3 +17,11 @@
 本切片只扩展现有单聊任务，不包含审批、Skills、工具调用、自动结果核对或 HA 渠道所有权；不承诺 exactly-once。
 
 验收：[渠道测试](../services/core/internal/feishu/adapter_test.go)、[真实数据库链路](../services/core/internal/feishu/chain_integration_test.go)、[模型协议测试](../services/core/internal/model/client_test.go)。这些是协议替身与真实 PG 的证据，不等于客户飞书或模型服务认证。
+
+## SQLite 任务接收基础
+
+`conversation/sqlite.Inbox` 实现既有渠道 `Inbox.Enqueue` 窄接口；以 sqlitedb 打开的文件连接为前提，先取得写事务再解析当前身份，任务和 pending 审计同事务提交。按租户、应用和消息/事件键去重；重复投递不更新原执行版本或正文，身份改绑不能接管旧任务。审计失败回滚任务，不确认接收。
+
+PostgreSQL 和 SQLite 共用 `conversation/contracttest.RunInbox`：覆盖并发投递、实例重建、事件与消息交叉冲突、租户/应用隔离、停用/改绑和审计失败。SQLite 测试使用独立文件连接，迁移从身份 schema 1 升到 2 并保留原数据。
+
+本片只提供任务接收库，SQLite 尚无任务认领、状态推进、审批、技能授权或查询运行入口；不得接入真实渠道确认消息。后续补全执行存储及能力检查后才能开放轻量部署，知识/向量启用仍须启动拒绝。

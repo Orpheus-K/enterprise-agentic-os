@@ -22,8 +22,12 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	inbox, err := migrations.ReadFile("migrations/00002_inbox.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	old, err := goose.NewProvider(goose.DialectSQLite3, db,
-		fstest.MapFS{"00001_identity.sql": &fstest.MapFile{Data: source}},
+		fstest.MapFS{"00001_identity.sql": &fstest.MapFile{Data: source}, "00002_inbox.sql": &fstest.MapFile{Data: inbox}},
 		goose.WithDisableGlobalRegistry(true))
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +37,15 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx, "INSERT INTO iam_tenants(id,name) VALUES('tenant','retained')"); err != nil {
 		t.Fatal(err)
+	}
+	for _, query := range []string{
+		"INSERT INTO iam_members(tenant_id,id,employee_id) VALUES('tenant','member','employee')",
+		"INSERT INTO channel_tasks(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt) VALUES('tenant','task','member','app','issuer','subject','event','message','hash','revision','retained prompt')",
+		"INSERT INTO channel_audit(tenant_id,task_id,state,reason) VALUES('tenant','task','pending','')",
+	} {
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -50,8 +63,11 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 		t.Fatalf("identity lost during migration: %q %v", name, err)
 	}
 	var count int
-	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_tasks").Scan(&count); err != nil || count != 0 {
+	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_tasks WHERE prompt='retained prompt' AND state='pending' AND step_version=1").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("task table unavailable after upgrade: %d %v", count, err)
+	}
+	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_audit WHERE task_id='task' AND step_version=1").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit lost during upgrade: %d %v", count, err)
 	}
 }
 

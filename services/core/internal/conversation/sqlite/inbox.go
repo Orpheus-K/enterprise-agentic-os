@@ -1,5 +1,5 @@
 // Package sqlite implements the lightweight conversation persistence slices.
-// Inbox is not an execution store; runtime configuration is not yet supported.
+// Inbox includes basic text-task leases; runtime configuration is not yet supported.
 package sqlite
 
 import (
@@ -18,11 +18,12 @@ type Inbox struct {
 	db            *sql.DB
 	identities    *identitysqlite.Repository
 	tenant        uuid.UUID
+	owner         uuid.UUID
 	app, revision string
 }
 
 func NewInbox(db *sql.DB, tenant uuid.UUID, app, revision string) *Inbox {
-	return &Inbox{db: db, identities: identitysqlite.New(db), tenant: tenant, app: app, revision: revision}
+	return &Inbox{db: db, identities: identitysqlite.New(db), tenant: tenant, owner: uuid.New(), app: app, revision: revision}
 }
 
 func (s *Inbox) Enqueue(ctx context.Context, m conversation.Message) (err error) {

@@ -9,6 +9,7 @@ import (
 
 var ErrUnauthenticated = errors.New("identity or tenant membership is not active")
 var ErrInvalidIdentity = errors.New("identity fields must be non-empty and canonical")
+var ErrForbidden = errors.New("operation capability denied")
 
 // ExternalIdentity is a mapping key, NOT proof of authentication. Only a verified
 // channel/OIDC adapter may supply it; TenantID comes from trusted installation config.

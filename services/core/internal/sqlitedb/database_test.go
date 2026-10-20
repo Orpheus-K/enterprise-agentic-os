@@ -6,9 +6,54 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/pressly/goose/v3"
 )
+
+func TestWriteTransactionLocksBeforeReading(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "writer.db")
+	if err := Migrate(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	first, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	// Shorten only this test connection's lock wait. The assertion is whether
+	// BEGIN takes the write lock, before any identity SELECT or business write.
+	if _, err := second.ExecContext(ctx, "PRAGMA busy_timeout=50"); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := first.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Rollback()
+	wait, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if contender, err := second.BeginTx(wait, nil); err == nil {
+		contender.Rollback()
+		t.Fatal("write transaction did not lock before reading")
+	}
+	if err := owner.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	contender, err := second.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("writer remained unavailable after rollback: %v", err)
+	}
+	if err := contender.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestUpgradePreservesIdentity(t *testing.T) {
 	ctx := t.Context()

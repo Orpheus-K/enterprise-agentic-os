@@ -28,11 +28,12 @@ func (s *Store) Operation(ctx context.Context, external identity.ExternalIdentit
 	if external.TenantID != s.tenant {
 		return identity.ErrUnauthenticated
 	}
-	p, err := s.identities.Resolve(ctx, external)
-	if err != nil {
-		return err
-	}
-	return s.identities.WithCapability(ctx, p, s.app, capability, fn)
+	return s.db.Transaction(ctx, func(q database.Queries) error {
+		if _, err := s.identities.RequireCapabilityIn(ctx, q, external, s.app, capability); err != nil {
+			return err
+		}
+		return fn(q)
+	})
 }
 
 func (s *Store) ReadAudit(ctx context.Context, external identity.ExternalIdentity, task uuid.UUID, after int64, limit int) (AuditPage, error) {

@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 11 项 Worker 库补片：不可变执行/对象引用，校验 UUID、版本、租约、30 秒截止时间及摘要；注入对象适配器必须逐次核对完整授权/撤权，读取和暂存均接收取消检查。暂存前后重验授权，输出回执摘要不符或取消后迟到均不返回结果；有界并发且异常释放槽位，无任务主状态。23 项 Python 测试及 lint/mypy 通过（m3-python-worker-check.log）；gRPC 适配及更完整契约负例尚待完成。
+
 - 第 11 项提取库补片：PDF/DOCX 转 canonical JSON 文本块；8 MiB 输入、1 MiB 输出、PDF 100 页、归档 16 MiB 展开限额；拒绝加密/活动 PDF、外部关系、宏/嵌入归档路径及 XML 实体。DOCX 按段落/表格顺序读取；无 OCR、复杂布局保真或容器隔离声明。pnpm check:python 通过，16 项测试（m3-python-extract-final.log）。初轮超大 pytest 参数名造成错误日志膨胀，改为固定测试 ID；临时生成绑定误留源码目录已移入 .tools。RPC 对象授权、取消与结果绑定尚未接入，本项仍进行中。
 
 - 第 11 项进行中：新增 contracts/compute.proto 与可重生成的 Python gRPC 绑定，包含租户/任务/步骤、执行版本、租约世代、截止时间、能力版本和对象摘要；文档内容不放进 RPC。CLI --serve 明确 isolation_unavailable，无隔离提供方不能启用。锁定 grpcio/protobuf/pypdf/python-docx；pnpm check:python 通过（m3-python-contract-check.log，4 项测试含真实 loopback 的未实现拒绝、生成物一致性）。当前仅契约与禁用边界，文档提取实现及授权/取消/限额反例尚待完成，不宣称 Worker 已可用；不涉及数据库，未重跑 PG。额度最近剩余 2%，未使用重置卡。

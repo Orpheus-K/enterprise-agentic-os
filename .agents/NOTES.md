@@ -148,3 +148,9 @@
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
 - 当前工作树制品要求 schema 22；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+
+## M3 WASM 折扣规则模块（2026-10-20）
+
+- 范围：R13/R14、A09、V09；增加纯整数 approval.wat/wasm 与 quotation.ApprovalInSandbox，固定摘要、独立运行时、1 秒/1 页限额；商余数算法避免 MaxMinor×基点溢出。宿主与模块各自拒绝非法输入，结果仅 0/1。WABT 1.0.34 构建；生产 Go 不新增编译器依赖。
+- 当前边界：仅库层模块，Worker/改单仍沿用 Go 核算；没有宣称已启用沙箱报价。下一片需要显式运行配置、模块摘要绑定任务版本并贯通报价/改单重审；不修改旧草稿的数值规则或默默重算在途任务。
+- 证据：`pnpm check:go` 通过（`.tools/m3-wasm-rule-final.log`）。big.Int 差分覆盖边界/最大金额及 100 个固定随机样本；初版 i32 结果在 raw uint64 带高位导致拒绝，模块出口显式零扩展为 i64 后通过，保留边界测试。无数据库变更，未运行 test:db；远端 CI 待确认。下一步为显式启用与运行版本绑定。

@@ -118,6 +118,10 @@ WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 RETURNING g
 // an unknown commit succeeds only for the same lease and exact publication.
 // Expired or superseded workers cannot modify content or acknowledge newer work.
 func (s *Store) PublishSync(ctx context.Context, actor identity.ExternalIdentity, lease SyncLease, p Publication) error {
+	return s.publishSync(ctx, actor, lease, p, nil)
+}
+
+func (s *Store) publishSync(ctx context.Context, actor identity.ExternalIdentity, lease SyncLease, p Publication, check func(database.Queries) error) error {
 	if p.validate() != nil || lease.Token == uuid.Nil || lease.Generation < 1 || lease.RequestRevision < 1 ||
 		!configHashValid(lease.ConfigHash) || p.Content.SourceID != lease.SourceID || p.Content.DocumentID != lease.DocumentID {
 		return ErrInvalid
@@ -143,6 +147,16 @@ AND request_revision=$5 AND config_hash=$6 AND generation=$7 AND lease_token=$8 
 		if err := s.syncAllowed(ctx, q, lease.SourceID); err != nil {
 			return err
 		}
+		if check != nil {
+			// The job lock alone does not exclude waiting on a separately
+			// updated document. Identity proof must follow both lock waits.
+			if err := s.lock(ctx, q, lease.SourceID, lease.DocumentID); err != nil {
+				return err
+			}
+			if err := check(q); err != nil {
+				return err
+			}
+		}
 		if state == "completed" && published == hash {
 			return nil
 		}
@@ -160,6 +174,11 @@ AND request_revision=$5 AND config_hash=$6 AND generation=$7 AND lease_token=$8 
 		}
 		if err := s.publish(ctx, q, p); err != nil {
 			return err
+		}
+		if check != nil {
+			if err := check(q); err != nil {
+				return err
+			}
 		}
 		tag, err := q.Exec(ctx, `UPDATE knowledge.sync_jobs SET state='completed',publication_hash=$5
 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND lease_until>clock_timestamp()`,

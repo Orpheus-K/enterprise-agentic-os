@@ -29,7 +29,10 @@
 - 检查点远端：ed1be1c PR CI 39400702524 completed/success。
 - 受控核对（schema 22）：新增 knowledge.reconcile 显式授权和不可变 sync_reconciliations 账本；HTTP `/api/ops/knowledge/sync/reconcile` 支持带证据摘要的 not_sent/completed，后者须完整匹配向量。只处理过期 pending，任务锁后重验 IAM/来源/能力；原子增加世代、写结果/核对/审计，幂等重试仍验权限。当前没有核对 UI 或供应商结果查询。
 - 核对证据：`pnpm check`、全量 `pnpm test:db` 通过（`.tools/m3-sync-reconcile-check.log`、`m3-sync-reconcile-full-db.log`）；随后加强账本写入者 RLS 约束，重跑两种 HTTP＋PG 核对用例通过（`m3-sync-reconcile-final.log`）。覆盖活跃租约拒绝、缺能力/证据、错误世代、审计回滚、幂等、旧执行者及能力撤销。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认。
-- 下一片：接入运行时调度配置与来源健康/权限检查，用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和带围栏发布；补可见的未知任务状态，不能依赖操作者直接改表。SQLite 范围仍待决策。
+- 核对远端：50f910c CI 39402156375/39402147117 均 success。
+- 发布身份复核：发现读取前后的 IAM 核验不足以覆盖发布锁等待；新增 PublishSyncForMembers，要求同步者和完整 ACL allow 成员证明，任务/文档锁后及发布后重验当前映射，恢复同步者上下文后写审计。不得将此校验视为原生文档权限证明。
+- 复核证据：`pnpm check:go` 与知识模块全部真实 PG integration 测试通过（`.tools/m3-sync-members-check.log`、`m3-sync-members-db.log`）；定向测试覆盖缺员、改绑、撤销、写入中撤销及文档锁等待期间撤销（`m3-sync-members-targeted.log`）。初版测试在持锁连接中观察 pg_stat_activity 超时，改独立观察连接后通过。无 schema 变化，未重跑其他模块数据库测试；测试残留 0，集群已停止。本片远端待确认。
+- 下一片：接入运行时调度配置与来源健康/权限检查，用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和 PublishSyncForMembers；补可见的未知任务状态，不能依赖操作者直接改表。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

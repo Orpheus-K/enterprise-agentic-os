@@ -44,7 +44,15 @@ schema 18 起，对齐 R15/R18 基础统计、V06/V13：
 
 schema 6 保留访问历史并移除访问留痕对任务的外键；这样不存在或跨范围任务可统一返回空页且记录访问，不通过数据库错误泄露存在性。成员外键保留。两个驱动共用 `conversation/contracttest.RunAudit`，覆盖交错全局事件下的局部分页、跨租户/应用、空页、越界、撤权/改绑、取消和留痕故障回滚。
 
-未知结果人工核对库接口见 [任务契约](task-runtime.md#sqlite-未知结果人工核对)。尚未提供 SQLite 运维 HTTP、任务清单或统计查询；完整轻量运行入口仍关闭。
+未知结果人工核对库接口见 [任务契约](task-runtime.md#sqlite-未知结果人工核对)。任务清单与统计库接口见下节；尚未提供 SQLite 运维 HTTP，完整轻量运行入口仍关闭。
+
+## SQLite 任务清单与统计
+
+`conversation/sqlite.Inbox.ListTasks/Stats` 复用 ReportWindow、TaskPage、TaskStats 与 audit.read 授权契约（R15/R18、A03/A08/A10、V06/V13）。查询不限制执行 Revision；按租户/应用和创建窗口筛选，游标在相同范围内解析。同一事务写入 scope=tasks/stats 的访问记录后才返回数据，撤权或留痕失败不返回部分结果。
+
+schema 8 保留既有访问记录，允许清单/统计留痕不绑定任务，并增加创建时间分页索引。SQLite 创建时间固定为 UTC 毫秒，窗口上下界均向上取整到存储精度，保持 [from,to)；更新时间取该任务最后一条步骤审计时间。技能尚未移植，技能字段为空；统计只汇总实际任务和审批状态，不推算外部结果。
+
+双驱动共享 `contracttest.RunReports` 覆盖同时间戳分页、未知/跨应用/跨租户游标、窗口边界、审批计数隔离、撤权和留痕故障。此库层能力不代表 SQLite 运维 HTTP 或完整轻量部署已开放。
 
 ## 关联执行证据
 

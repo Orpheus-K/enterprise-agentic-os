@@ -81,6 +81,9 @@
 
 ## M3 PG 备份恢复演练
 
+- schema 22 补片（A10/V15）：旧固定 9 表 manifest 遗漏同步检查点，且 echo 内 psql 失败被掩盖。v2 枚举全部业务普通表，记录行数、完整行摘要及逐表 owner/RLS；dump 与 manifest 同校验，事实查询显式失败，备份名随机后缀。v2 明确拒绝旧无版本 manifest。
+- 证据：故障注入在旧脚本上复现伪成功，在新脚本上通过，已纳入 CI。WSL 真实 PG schema22 演练通过（`.tools/m3-backup22-drill.log`）：未知输入/核对账本保留、manifest 损坏/非空目标/同数量错误摘要拒绝、运行身份 RLS/DDL 限制保留。测试库/角色清理，集群停止。无 Go/SQL 迁移变更，未重跑产品套件；本片远端待确认。仍要求停写，不能作为在线备份或外部副作用可重放证明。
+
 - 实现：[backup-restore.sh](../deploy/postgres/backup-restore.sh)；manifest 事实比对、校验和、非空目标拒绝。演练与未覆盖项见 [PG 指南](../deploy/postgres/README.md#备份与恢复)。演练脚本与凭证在 .tools（忽略），日志 m3-backup-drill.log，残留 0，集群已停止。
 - 未做：文件/密钥联合备份、在线一致备份、RTO/RPO、SQLite；离线安装包尚未开始。
 

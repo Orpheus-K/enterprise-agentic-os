@@ -67,7 +67,8 @@ WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 FOR UPDATE`
 		}
 		if _, err := q.Exec(ctx, `UPDATE knowledge.sync_jobs SET request_revision=$5,config_hash=$6,state='pending',
 generation=generation+1,lease_token=NULL,lease_until='-infinity',publication_hash='',
-embedding_input=NULL,embedding_vectors=NULL,embedding_pending=false
+embedding_input=CASE WHEN config_hash=$6 AND embedding_vectors IS NOT NULL THEN embedding_input ELSE NULL END,
+embedding_vectors=CASE WHEN config_hash=$6 THEN embedding_vectors ELSE NULL END,embedding_pending=false
 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4`, s.tenant, s.app, source, document, revision, configHash); err != nil {
 			return err
 		}

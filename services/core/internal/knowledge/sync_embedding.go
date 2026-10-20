@@ -173,3 +173,29 @@ func (s *Store) LoadSyncEmbedding(ctx context.Context, actor identity.ExternalId
 	}
 	return out, nil
 }
+
+// RefreshSyncEmbedding discards only a known complete result whose source
+// content has changed. It never clears an unresolved external call.
+func (s *Store) RefreshSyncEmbedding(ctx context.Context, actor identity.ExternalIdentity, lease SyncLease, content Content) error {
+	if content.validate() != nil || content.Deleted || content.SourceID != lease.SourceID || content.DocumentID != lease.DocumentID {
+		return ErrInvalid
+	}
+	return s.withSyncLease(ctx, actor, lease, func(q database.Queries, input, vectors []byte, pending bool) error {
+		if pending {
+			return ErrConflict
+		}
+		checkpoint, err := decodeEmbedding(input, vectors)
+		if err != nil {
+			return err
+		}
+		if sameDigest(checkpoint.Content, content) {
+			return ErrConflict
+		}
+		if _, err := q.Exec(ctx, `UPDATE knowledge.sync_jobs SET embedding_input=NULL,embedding_vectors=NULL
+WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4`,
+			s.tenant, s.app, lease.SourceID, lease.DocumentID); err != nil {
+			return err
+		}
+		return s.audit(ctx, q, lease.SourceID, lease.DocumentID, "sync.embedding_refresh", lease.Generation)
+	})
+}

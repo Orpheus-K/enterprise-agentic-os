@@ -32,7 +32,11 @@
 - 核对远端：50f910c CI 39402156375/39402147117 均 success。
 - 发布身份复核：发现读取前后的 IAM 核验不足以覆盖发布锁等待；新增 PublishSyncForMembers，要求同步者和完整 ACL allow 成员证明，任务/文档锁后及发布后重验当前映射，恢复同步者上下文后写审计。不得将此校验视为原生文档权限证明。
 - 复核证据：`pnpm check:go` 与知识模块全部真实 PG integration 测试通过（`.tools/m3-sync-members-check.log`、`m3-sync-members-db.log`）；定向测试覆盖缺员、改绑、撤销、写入中撤销及文档锁等待期间撤销（`m3-sync-members-targeted.log`）。初版测试在持锁连接中观察 pg_stat_activity 超时，改独立观察连接后通过。无 schema 变化，未重跑其他模块数据库测试；测试残留 0，集群已停止。本片远端待确认。
-- 下一片：接入运行时调度配置与来源健康/权限检查，用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和 PublishSyncForMembers；补可见的未知任务状态，不能依赖操作者直接改表。SQLite 范围仍待决策。
+- 复核远端：e8b4915 CI 39403158224/39403152439 均 success。
+- 单次执行器：Syncer.RunOnce 已串联持久领取、用户凭证读取、规范化、Embedding 意图/结果、最终原文重读、逐成员有效权限核验、来源健康及 PublishSyncForMembers。配置摘要绑定来源/身份/模型空间；一分钟证明窗、五分钟租约；失败尝试标记来源 unavailable，错误不吞。ReportSyncHealth 在来源锁下分配健康版本，防止文档请求版本混用。
+- 检查点复用：较新请求同配置保留完整结果，原文不变不重新嵌入；原文变化才允许清除已知结果并重新写意图，未知 pending 不受影响。已有结果恢复仍重新取当前身份/权限，不能复用 ACL。
+- 执行器证据：初版 `pnpm check`、全量 `pnpm test:db` 通过（`.tools/m3-native-sync-check.log`、`m3-native-sync-full-db.log`）；补同内容复用/新版本重算后，`pnpm check:go` 及飞书来源、知识模块全部 PG integration 测试通过（`m3-native-sync-final-check.log`、`m3-native-sync-final-db.log`）。合成原生协议＋真实 Embedder HTTP＋真实 PG 覆盖首次发布、原生拒绝、Embedding 后撤权、未知不重放、已知结果接管和阻断旧证据。测试残留 0，集群已停止；本片远端待确认，未真实租户联调。
+- 下一片：接入启动配置与常驻调度，验证启停、配置变更和来源轮询；补可见的未知任务状态，不能依赖操作者直接改表。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 
@@ -133,4 +137,4 @@
 - 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
-- 当前工作树制品要求 schema 19；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+- 当前工作树制品要求 schema 22；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。

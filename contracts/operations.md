@@ -4,6 +4,8 @@
 
 ## 区分接口
 
+知识同步核对的 POST 接口、独立能力及证据要求见 [知识契约](knowledge.md#未知-embedding-的受控核对)，不复用 task.reconcile 授权。
+
 | GET 路径 | 授权 | 输出与语义 |
 |---|---|---|
 | `/api/health` | 无 | 进程存活，保持原契约 |

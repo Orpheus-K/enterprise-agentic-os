@@ -51,7 +51,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	operation := "ops.unknown"
 	switch r.URL.Path {
-	case "/api/ops/knowledge/content", "/api/ops/knowledge/acl", "/api/ops/knowledge/health", "/api/ops/knowledge/read", "/api/ops/knowledge/vectors", "/api/ops/knowledge/search":
+	case "/api/ops/knowledge/content", "/api/ops/knowledge/acl", "/api/ops/knowledge/health", "/api/ops/knowledge/read", "/api/ops/knowledge/vectors", "/api/ops/knowledge/search", "/api/ops/knowledge/sync/reconcile":
 		operation = "ops.knowledge"
 	case "/api/ops/notice":
 		operation = "ops.notice"

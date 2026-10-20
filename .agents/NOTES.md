@@ -26,7 +26,10 @@
 - 同步任务远端：6d3755b PR CI 39399262983 completed/success。
 - Embedding 检查点（schema 21）：BeginSyncEmbedding 先保存整批意图与内容/空间；SaveSyncEmbedding 验完整切片集并原子保存向量/审计。未知 pending 不允许过期接管或新请求覆盖；完整结果可接管复用，PublishSync 校验内容/向量一致，ACL 必须重新核验。尚无人工核对入口或后台 Worker，不能视为运行时同步已完成。
 - 检查点证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-sync-embedding-check.log`、`m3-sync-embedding-full-db.log`）；定向 `TestSync*` 通过（`m3-sync-embedding-targeted.log`）。覆盖未知不重放、迟到拒绝、部分向量拒绝、审计故障回滚、幂等保存及恢复发布。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认；备份演练仍未覆盖 schema 21。
-- 下一片：补未知结果的受控核对入口，接入运行时调度配置与来源健康/权限检查；用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和带围栏发布。SQLite 范围仍待决策。
+- 检查点远端：ed1be1c PR CI 39400702524 completed/success。
+- 受控核对（schema 22）：新增 knowledge.reconcile 显式授权和不可变 sync_reconciliations 账本；HTTP `/api/ops/knowledge/sync/reconcile` 支持带证据摘要的 not_sent/completed，后者须完整匹配向量。只处理过期 pending，任务锁后重验 IAM/来源/能力；原子增加世代、写结果/核对/审计，幂等重试仍验权限。当前没有核对 UI 或供应商结果查询。
+- 核对证据：`pnpm check`、全量 `pnpm test:db` 通过（`.tools/m3-sync-reconcile-check.log`、`m3-sync-reconcile-full-db.log`）；随后加强账本写入者 RLS 约束，重跑两种 HTTP＋PG 核对用例通过（`m3-sync-reconcile-final.log`）。覆盖活跃租约拒绝、缺能力/证据、错误世代、审计回滚、幂等、旧执行者及能力撤销。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认。
+- 下一片：接入运行时调度配置与来源健康/权限检查，用纪要/价格表合成夹具贯穿读取、规范化、Embedding 和带围栏发布；补可见的未知任务状态，不能依赖操作者直接改表。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

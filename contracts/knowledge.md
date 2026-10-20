@@ -32,11 +32,24 @@ PublishSync 在同一事务锁定匹配请求版本、配置、Token 和世代�
 
 schema 21 在同一强制 RLS 任务行保存 embedding_pending、embedding_input、embedding_vectors。BeginSyncEmbedding 在网络调用前原子保存内容快照、固定 Space 和意图审计；重复调用拒绝，不把“已有意图”当作重放授权。一次意图覆盖整份文档的 Embedding 批次。
 
-SaveSyncEmbedding 仅接受与意图的来源、文档、内容版本、空间及切片全集一致的完整 VectorSet，结果与审计原子保存后才清除 pending；相同结果保存幂等，不同结果冲突。输入及结果各限 16 MiB；不存 API Key。失败、崩溃或租约过期导致的未知批次保持 pending，ClaimSync 和较新 ScheduleSync 均不能接管/覆盖，不自动再次付费调用。过期执行者也不能补写结果。尚未提供未知结果的人工核对入口，运行时接线前必须补齐。
+SaveSyncEmbedding 仅接受与意图的来源、文档、内容版本、空间及切片全集一致的完整 VectorSet，结果与审计原子保存后才清除 pending；相同结果保存幂等，不同结果冲突。输入及结果各限 16 MiB；不存 API Key。失败、崩溃或租约过期导致的未知批次保持 pending，ClaimSync 和较新 ScheduleSync 均不能接管/覆盖，不自动再次付费调用。过期执行者也不能补写结果；人工处理使用下述受控核对入口。
 
 保存成功后进程退出，新的租约可通过 LoadSyncEmbedding 读取内容与向量检查点并留痕，不再次嵌入。检查点不保存 ACL：发布者必须重新检查当前来源权限/身份/健康，并构造当前 ACL。PublishSync 拒绝 pending，且已有检查点时要求发布内容与向量完全一致；不能用保存的向量配另一个正文。
 
 这不保证批次内部分成功的成本恢复；部分结果不会伪装成完整结果，也不会自动重放。真实 PG 测试验证未知调用不接管/不覆盖、迟到结果拒绝、缺切片拒绝、检查点审计失败保留 pending、完整结果幂等、接管复用和篡改发布拒绝。
+
+### 未知 Embedding 的受控核对
+
+schema 22 新增不可变 sync_reconciliations 账本与独立 `knowledge.reconcile` 能力，不自动授予。`POST /api/ops/knowledge/sync/reconcile` 复用运维 Bearer 绑定身份，要求同时拥有来源同步权限和当前安装的 knowledge.reconcile；在任务行锁后重新解析 IAM、检查来源和能力，幂等重试也不能跳过撤权。
+
+请求字段为 id（核对幂等 UUID）、source_id、document_id、request_revision、generation、config_hash、outcome、evidence_hash，以及可选 vectors。evidence_hash 为核对证据的 SHA-256；只记录摘要，不接受“超时所以没发生”的自动推断。操作者须独立保留可审查的供应商/网关证据。
+
+- `not_sent`：确认整个批次未发出；禁止携带 vectors，清除意图，允许新租约重新准备并调用。
+- `completed`：确认完整结果；必须携带与原意图匹配的完整 VectorSet，保存结果供新租约复用，不重新调用。
+
+两种结论都只接受租约已过期、仍 pending 的目标请求/世代/配置。更新任务、增加世代使旧执行者失效、写不可变核对记录及审计在同一事务。相同 id 和请求摘要重试幂等；不同证据/内容复用 id 冲突。部分完成或结果仍不确定时不能选择上述结论，保持阻断。
+
+HTTP 请求上限 8 MiB，拒绝未知字段、查询参数和尾随 JSON；成功 accepted，认证失败 401、能力不足 403、无效输入 400、状态冲突 409、数据库/审计故障 503，响应 no-store。真实 HTTP＋PG 测试覆盖两种恢复、活跃租约拒绝、缺权限/证据、错误世代、审计回滚、幂等、旧执行者及授权撤销。尚无核对 UI 或供应商结果自动查询。
 
 ## 限定读取边界
 

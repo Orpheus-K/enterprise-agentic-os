@@ -18,6 +18,14 @@ func (a *API) knowledgeOperation(ctx context.Context, r *http.Request, w http.Re
 		return nil
 	}
 	switch r.URL.Path {
+	case "/api/ops/knowledge/sync/reconcile":
+		var in knowledge.SyncReconciliation
+		if err := decode(&in); err != nil {
+			return nil, err
+		}
+		if err := a.knowledge.ReconcileSync(ctx, a.identity, in); err != nil {
+			return nil, err
+		}
 	case "/api/ops/knowledge/content":
 		var in knowledge.Content
 		if err := decode(&in); err != nil {

@@ -70,6 +70,29 @@ func TestSyncReconciliationHTTP(t *testing.T) {
 				}
 				return w.Code
 			}
+			inspect := func(want int) knowledge.SyncStatus {
+				raw, _ := json.Marshal(map[string]any{"source_id": source, "document_id": content.DocumentID})
+				r := httptest.NewRequest("POST", "/api/ops/knowledge/sync/inspect", bytes.NewReader(raw))
+				r.Header.Set("Authorization", "Bearer "+opsToken)
+				w := httptest.NewRecorder()
+				f.api.ServeHTTP(w, r)
+				if w.Code != want {
+					t.Fatalf("inspect status %d, want %d", w.Code, want)
+				}
+				var status knowledge.SyncStatus
+				if want == 200 {
+					if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
+						t.Fatal(err)
+					}
+					for _, secret := range []string{content.Title, content.Chunks[0].Body, lease.Token.String(), "embedding_vectors", "lease_token"} {
+						if strings.Contains(w.Body.String(), secret) {
+							t.Fatal("inspect exposed private data")
+						}
+					}
+				}
+				return status
+			}
+			inspect(403)
 			if got := request(in, false); got != 401 {
 				t.Fatal("missing authentication", got)
 			}
@@ -77,10 +100,25 @@ func TestSyncReconciliationHTTP(t *testing.T) {
 				t.Fatal("missing explicit capability", got)
 			}
 			exec("INSERT INTO iam.operation_grants(tenant_id,member_id,app_id,capability) VALUES($1,$2,'app_a','knowledge.reconcile')", f.tenant, f.member)
+			originalDocument := content.DocumentID
+			content.DocumentID = "missing"
+			inspect(404)
+			content.DocumentID = originalDocument
+			originalSource := source
+			source = uuid.New()
+			inspect(403)
+			source = originalSource
+			status := inspect(200)
+			if status.State != "running" || !status.LeaseActive || status.EmbeddingState != "pending" || status.Generation != lease.Generation || status.ConfigHash != hash || status.Embedding == nil || len(status.Embedding.Hash) != 64 || len(status.Embedding.ChunkIDs) != 1 || status.Embedding.ChunkIDs[0] != "p1" {
+				t.Fatal("invalid active snapshot", status)
+			}
 			if got := request(in, true); got != 409 {
 				t.Fatal("live worker reconciled", got)
 			}
 			exec("UPDATE knowledge.sync_jobs SET lease_until=clock_timestamp()-interval '1 second'")
+			if status := inspect(200); status.LeaseActive || status.EmbeddingState != "pending" {
+				t.Fatal("expired intent not preserved")
+			}
 			bad := in
 			bad.EvidenceHash = ""
 			if got := request(bad, true); got != 400 {
@@ -105,6 +143,16 @@ func TestSyncReconciliationHTTP(t *testing.T) {
 					t.Fatal("reconciliation/retry failed", got)
 				}
 			}
+			status = inspect(200)
+			if status.State != "pending" || status.Generation <= lease.Generation || status.LeaseActive {
+				t.Fatal("reconciled state not visible")
+			}
+			if outcome == "completed" && status.EmbeddingState != "saved" {
+				t.Fatal("saved result missing")
+			}
+			if outcome == "not_sent" && (status.EmbeddingState != "none" || status.Embedding != nil) {
+				t.Fatal("cleared intent still visible")
+			}
 			if err := f.pg.Admin.QueryRow(t.Context(), "SELECT count(*) FROM knowledge.sync_reconciliations").Scan(&count); err != nil || count != 1 {
 				t.Fatal("duplicate reconciliation receipt", err)
 			}
@@ -128,9 +176,13 @@ func TestSyncReconciliationHTTP(t *testing.T) {
 				t.Fatal("confirmed not-sent task not retryable", err)
 			}
 			exec("UPDATE iam.operation_grants SET enabled=false WHERE capability='knowledge.reconcile'")
+			inspect(403)
 			if got := request(in, true); got != 403 {
 				t.Fatal("receipt retry bypassed revoked capability", got)
 			}
+			exec("UPDATE iam.operation_grants SET enabled=true WHERE capability='knowledge.reconcile'")
+			exec("UPDATE knowledge.sources SET enabled=false WHERE id=$1", source)
+			inspect(403)
 		})
 	}
 }

@@ -30,7 +30,7 @@ PublishSync 在同一事务锁定匹配请求版本、配置、Token 和世代�
 
 原生用户凭证来源发布须使用 `PublishSyncForMembers`，提交同步者及每个 ACL allow 成员的外部身份/预期 IAM 成员证明；允许集合必须完整匹配，不能缺员、重复或跨租户。证明来自可信来源适配器，不能来自员工请求。该方法先取得任务锁及文档锁，再在同一事务重新解析全部身份，发布后、完成前再次复核；成员撤销或改绑使整笔回滚。逐个解析后恢复同步者事务上下文，避免审计或写入误用最后一个收件人的身份。它只验证 IAM 当前映射，不能替代原生文档权限检查或延长外部证明有效期。
 
-这仍是存储 API，不是运行中的来源同步器。尚未接入调度配置、未知结果核对、权限与健康同步、游标持久化和后台 Worker。当前不提供续租，超过租期必须拒绝发布。验证见 `sync_jobs_integration_test.go`：连接池重开、并发领取、过期接管、配置错配、读者 RLS、旧执行者拒绝、完成审计失败和提交前过期回滚。
+存储 API 由[飞书来源同步器](feishu-docs.md)消费；未知结果核对见下文，尚无原生事件游标。当前不提供续租，超过租期必须拒绝发布。验证见 `sync_jobs_integration_test.go`：连接池重开、并发领取、过期接管、配置错配、读者 RLS、旧执行者拒绝、完成审计失败和提交前过期回滚。
 
 ### 同步 Embedding 意图与检查点
 
@@ -57,6 +57,14 @@ schema 22 新增不可变 sync_reconciliations 账本与独立 `knowledge.reconc
 
 HTTP 请求上限 8 MiB，拒绝未知字段、查询参数和尾随 JSON；成功 accepted，认证失败 401、能力不足 403、无效输入 400、状态冲突 409、数据库/审计故障 503，响应 no-store。真实 HTTP＋PG 测试覆盖两种恢复、活跃租约拒绝、缺权限/证据、错误世代、审计回滚、幂等、旧执行者及授权撤销。尚无核对 UI 或供应商结果自动查询。
 
+## 同步任务查询
+
+`POST /api/ops/knowledge/sync/inspect` 接收严格 JSON `{source_id, document_id}`，复用运维 Bearer、绑定身份及 no-store。每次要求当前来源同步权限和独立 `knowledge.reconcile` 授权；不按 Token 推导权限。返回 request_revision、generation、config_hash、持久 state、lease_active 和 embedding_state（none/pending/saved）。pending 只表示已记录意图：活跃租约可能仍在调用，过期也不证明未发送，必须通过带证据的 reconcile 处理。
+
+存在输入时附 embedding 元数据：规范化输入的 SHA-256 hash、模型空间、内容版本和切片 ID；不返回正文、标题、向量、凭证或租约 Token。快照不锁定后续状态，不作为供应商执行结果证据；核对接口仍原子重验版本/世代/授权。查询无写入或外部调用。获权来源缺任务返回 404，无来源权限或缺能力 403，其余错误遵循运维接口；未知字段、查询参数及尾随 JSON 拒绝。此查询不等于来源健康或完整同步验收。
+
+验证：运维 HTTP＋真实 PG 用例覆盖活跃/过期 pending、两种核对后的状态、缺能力、撤权、禁用来源、不可访问来源、缺任务与输出脱敏。
+
 ## 限定读取边界
 
 - 复用身份：解析当前 ExternalIdentity 为有效租户/成员；固定来源安装，不使用请求携带的部门或角色作为授权依据。
@@ -76,7 +84,7 @@ HTTP 请求上限 8 MiB，拒绝未知字段、查询参数和尾随 JSON；成�
 ## 首切片实现边界
 
 - 管理来源：knowledge.sources 由管理员预置 tenant/app/source/sync_member，默认禁用；运行角色只能读取来源配置，不能创建来源或更换同步身份。关闭来源立即阻断读取/写入。
-- 调用入口：internal/knowledge.Store 提供 PutContent、PutACL、Read；身份必须来自可信渠道，复用现有身份映射与事务。已通过既有认证运维 HTTP 接入；尚无来源 MCP/拉取连接器。
+- 调用入口：internal/knowledge.Store 提供 PutContent、PutACL、Read；身份必须来自可信渠道，复用现有身份映射与事务。已通过既有认证运维 HTTP 接入；飞书拉取连接器见[来源契约](feishu-docs.md)，尚无来源 MCP。
 - 固定版本：源版本使用正整数，内容与 ACL 各自单调推进；相同版本与相同输入摘要幂等，变更输入或旧版本冲突。ACL 显式绑定 ContentRevision；新内容没有对应 ACL 时不可读，ACL 可先于内容到达。
 - 表达权限：当前接受来源归一化的成员允许/拒绝；文档拒绝优先，切片规则仅收紧。切片 allow 缺失继承，空数组拒绝全部，两者摘要不同。不声称已解析部门继承或源平台自定义规则。
 - 固定引用：Read 输入来源/文档/切片/内容版本/ACL 版本；返回已授权标题、正文和不透明原文锚点。版本、当前身份或权限不匹配不返回正文；此处不生成可点击源 URL 或虚构出处。
@@ -121,7 +129,7 @@ schema 17 实现精确余弦候选检索（A05），不含 ANN 或全文融合�
 
 9. 嵌入客户端：`model.Embedder` 调用管理员批准的 OpenAI 兼容 `/embeddings` 端点，配置须含 HTTPS（HTTP 需显式批准）URL、模型名、管理员声明的 Revision 与维度（1—4096）；输入 1—16000 字节。响应必须恰好一个有限向量且维度与配置一致，否则失败，不截断、补零或平均；错误与日志不含正文、密钥或远端错误内容。Revision 与维度须与 knowledge.embedding_spaces 对应行一致，Search/PublishVectors 已对模型、版本、维度做 409/400 拦截，远端模型被静默升级须通过新建空间体现。
 10. 启动装配：安装配置可选 `embedding`，字段对应 `model.EmbeddingConfig`；省略或 null 时不构造客户端。提供对象时严格校验，空对象及未知字段拒绝。`api_key_env` 与聊天模型独立解析，命名变量缺失或为空则启动失败；仅获准无鉴权服务可留空引用。启动只构造客户端，不调用供应商，不把配置存在当作可用性证明。
-11. 当前边界：配置 `retrieval` 才启用会话 Embed/Search；只有 embedding 配置时仍不触发业务调用，也不改变纯聊天任务指纹。启用后空间、候选上限及嵌入配置纳入运行指纹；未接入切片批量嵌入发布，中文召回质量未评估。
+11. 当前边界：配置 `retrieval` 才启用会话 Embed/Search；只有 embedding 配置时仍不触发业务调用，也不改变纯聊天任务指纹。启用后空间、候选上限及嵌入配置纳入运行指纹；来源批量嵌入发布由 sources 配置独立启用，中文召回质量未评估。
 
 验证：[嵌入客户端测试](../services/core/internal/model/embedding_test.go)、[配置与凭证测试](../services/core/internal/bootstrap/embedding_test.go) 使用本地替身端点；对应 R10/R13、A05/A06/A08、T13/V12 的配置边界，不代替 T08—T10/V06—V08 的会话检索验收。真实模型可达性与质量需另行联调。
 

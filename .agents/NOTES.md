@@ -5,9 +5,18 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 原响应审批（2026-10-20）
+## 当前切片：SQLite 单任务审计（2026-10-20）
 
-- 当前本机开发目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-sqlite-approvals-delivery`。原目录的 sqlitedb/database.go 反复被未知来源覆盖；不再以原目录为受测制品。C 盘临时 worktree 因空间耗尽/写入受限已归档，改动已完整转移到 E 盘隔离目录。
+- 目录：继续在 `E:/agent-project/.tools/sqlite-approval-verify` 的当前分支开发；原目录仅保留历史副本，不作验证依据。
+- 实现：R02/R15、A03/A08/A10、V06/V13；同事务当前身份/能力复核、按租户/应用过滤后的任务内分页及访问留痕。schema 6 去除访问记录的任务外键，未知/跨范围任务统一空页并记录访问，保留成员外键与既有记录。规范见 [运维](../contracts/operations.md#sqlite-单任务审计查询)。
+- 定向证据：共享 PG/SQLite 审计契约及迁移/写锁测试通过（`E:/agent-project/.tools/m3-sqlite-audit-final-db.log`），覆盖分页不泄露全局序号、返回条数/成员归属、跨范围空页、撤权/改绑、取消和访问留痕失败不返回数据。
+- 工程证据：`pnpm check` 退出 0（`E:/agent-project/.tools/m3-sqlite-audit-check.log`）；PG 生产实现与 schema 22 未变，未重复全量 test:db。测试库/角色残留 0，集群停止；隔离目录 schema 6/immediate 保持正确。
+- 下一片：SQLite 未知结果人工核对，再补任务清单/统计；通知、技能/工具、报价与运行入口仍按依赖移植，知识/向量启动拒绝要求保留。
+- 远端：上一片 49d6acd 的 CI 39416102942/39416059716 仍 in_progress，本片待确认。
+
+## 保留切片：SQLite 原响应审批（2026-10-20）
+
+- 当前本机开发目录：`E:/agent-project/.tools/sqlite-approval-verify`，以该目录当前分支为准。原目录的 sqlitedb/database.go 反复被未知来源覆盖；不再以原目录为受测制品。C 盘临时 worktree 因空间耗尽/写入受限已归档，改动已完整转移到 E 盘隔离目录。
 
 - 实现：R03/R04/R06、A03/A04/A08、V03/V05/V06；schema 5 保存原审批策略，挂起/查看/决定/到期与状态及审计原子提交，发送意图前重验摘要、期限、当前审批人映射与能力。NotifySubject 明确拒绝，尚无通知、报价改单、Worker/HTTP 接线。契约见 [任务](../contracts/task-runtime.md#sqlite-原响应审批)。
 - 反例：首轮共享夹具复用 UUID/文本参数导致 PG 42P08，已拆分。sqlitedb/database.go 又出现 schema 1/缺写锁状态，按用户已有“非有意改动、恢复”授权修正为本片 schema 5/immediate；提交前须复核。修正后双驱动初轮审批与迁移通过（`.tools/m3-sqlite-approvals-db-fixed.log`）；更早失败日志保留在 m3-sqlite-approvals-db.log。

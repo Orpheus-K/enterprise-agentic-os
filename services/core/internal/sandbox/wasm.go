@@ -67,6 +67,10 @@ func (p Program) validate() error {
 // A new runtime is created and
 // closed for every call, so memory, globals and compiled state never leak between tasks.
 func Run(ctx context.Context, program Program, limits Limits, export string, args ...uint64) ([]uint64, error) {
+	return run(ctx, program, limits, export, false, nil, args...)
+}
+
+func run(ctx context.Context, program Program, limits Limits, export string, artifact bool, consume func(context.Context, api.Module, []uint64) error, args ...uint64) ([]uint64, error) {
 	if err := limits.validate(); err != nil {
 		return nil, err
 	}
@@ -90,6 +94,9 @@ func Run(ctx context.Context, program Program, limits Limits, export string, arg
 		return nil, fmt.Errorf("%w: unknown export", ErrInvalid)
 	}
 	params, outputs := definition.ParamTypes(), definition.ResultTypes()
+	if artifact && (len(outputs) != 2 || outputs[0] != api.ValueTypeI32 || outputs[1] != api.ValueTypeI32 || compiled.ExportedMemories()["memory"] == nil) {
+		return nil, fmt.Errorf("%w: artifact requires memory and (i32 offset, i32 length)", ErrInvalid)
+	}
 	if len(params) != len(args) || len(outputs) > maxValues {
 		return nil, fmt.Errorf("%w: signature size", ErrInvalid)
 	}
@@ -125,6 +132,11 @@ func Run(ctx context.Context, program Program, limits Limits, export string, arg
 	for i, typ := range outputs {
 		if typ == api.ValueTypeI32 {
 			results[i] = uint64(uint32(results[i]))
+		}
+	}
+	if consume != nil {
+		if err := consume(ctx, module, results); err != nil {
+			return nil, err
 		}
 	}
 	return results, nil

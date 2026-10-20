@@ -152,5 +152,8 @@
 ## M3 WASM 折扣规则模块（2026-10-20）
 
 - 范围：R13/R14、A09、V09；增加纯整数 approval.wat/wasm 与 quotation.ApprovalInSandbox，固定摘要、独立运行时、1 秒/1 页限额；商余数算法避免 MaxMinor×基点溢出。宿主与模块各自拒绝非法输入，结果仅 0/1。WABT 1.0.34 构建；生产 Go 不新增编译器依赖。
-- 当前边界：仅库层模块，Worker/改单仍沿用 Go 核算；没有宣称已启用沙箱报价。下一片需要显式运行配置、模块摘要绑定任务版本并贯通报价/改单重审；不修改旧草稿的数值规则或默默重算在途任务。
+- 运行时接线：可选 quotation_wasm_sha256 仅接受内置摘要，纳入 executionRevision；省略保留原指纹。WithQuotationSandbox 固定启用，新报价 SaveQuotation 与改单 AmendQuotation 运行精确折扣复核；与独立整数结果不一致或沙箱失败均阻断，不回退。金额汇总、目录与旧稿验证仍由可信 Go 承担；只声称折扣规则隔离。配置变更不接管旧运行版本任务/审批。
+- 运行时证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-wasm-runtime-check.log`、`m3-wasm-runtime-db.log`）；3 个 WASM 报价贯通场景通过（`m3-wasm-runtime-targeted.log`），含七五折审批、八折边界、改单重审、检查点失败恢复。单元测试覆盖摘要校验/指纹、取消和结果不一致不回退。schema 22 未变；测试库/角色残留 0，集群停止；本片远端待确认，无真实外发。
+- 近期远端：来源贯通 c04faec CI 39406978346/39406973183、备份 c44a543 CI 39407631878/39407623734 均 success。WASM 库层 4e21509 的 CI 尚未确认。
+- 下一片：核对 M3 剩余计算输出限额、隔离负例与部署材料；容器 Python、CPU 指令计量及文件产物扫描仍未实现，SQLite 范围仍待决策。
 - 证据：`pnpm check:go` 通过（`.tools/m3-wasm-rule-final.log`）。big.Int 差分覆盖边界/最大金额及 100 个固定随机样本；初版 i32 结果在 raw uint64 带高位导致拒绝，模块出口显式零扩展为 i64 后通过，保留边界测试。无数据库变更，未运行 test:db；远端 CI 待确认。下一步为显式启用与运行版本绑定。

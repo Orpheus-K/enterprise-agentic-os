@@ -105,3 +105,5 @@
 Token 必须是各绑定用户自己的 user access token；目前不自动获取/刷新，过期使来源不可用，需要轮换环境变量并重启。候选收件人不是授权名单，执行器逐个验证原生有效权限。配置变更先停旧实例；未知调用须经受控核对，不能通过改配置或清表绕过。轮询与证明有效期、类型限制及失败语义以 [来源契约](../contracts/feishu-docs.md) 为准。
 
 同步任务查询：向 `/api/ops/knowledge/sync/inspect` POST `{"source_id":"配置中的来源 UUID","document_id":"配置中的原生文档 ID"}`，使用既有运维 Bearer。运维绑定成员须具有该来源同步权限及 `knowledge.reconcile` 授权。读取返回的 request_revision、generation、config_hash 与输入摘要，结合供应商证据再调用核对入口；pending 或租约过期本身不能作为 not_sent 的证据。接口契约见[同步任务查询](../contracts/knowledge.md#同步任务查询)。
+
+可选 WASM 折扣复核：管理员审查制品后，在顶层设置 `"quotation_wasm_sha256":"b1899480373d1df63263bc8988fd36fe164fa9cec28c76c5dd436d53a9b49ec7"`。只支持该内置模块，未知摘要拒绝启动。省略不启用；开关会改变运行版本，部署前须按原配置处理或保留在途任务及审批，不能靠改数据库版本字段强行接管。详见[沙箱契约](../contracts/sandbox.md#固定折扣规则模块wasm)。

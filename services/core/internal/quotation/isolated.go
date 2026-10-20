@@ -9,7 +9,7 @@ import (
 )
 
 // ApprovalModuleSHA256 pins the reviewed build artifact, not a caller-supplied
-// module. A future runtime binding must include this digest in its revision.
+// module. Runtime bindings include this digest in their execution revision.
 const ApprovalModuleSHA256 = "b1899480373d1df63263bc8988fd36fe164fa9cec28c76c5dd436d53a9b49ec7"
 
 //go:embed rules/approval.wasm

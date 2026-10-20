@@ -20,12 +20,14 @@ import (
 	"agentos.local/core/internal/knowledge"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/operations"
+	"agentos.local/core/internal/quotation"
 	"agentos.local/core/internal/telemetry"
 	"agentos.local/core/internal/toolgateway"
 	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
+	QuotationWASMSHA256  string                        `json:"quotation_wasm_sha256,omitempty"`
 	Tools                *ToolsConfig                  `json:"tools,omitempty"`
 	Skills               *SkillsConfig                 `json:"skills,omitempty"`
 	Approval             *conversation.ApprovalPolicy  `json:"approval,omitempty"`
@@ -61,6 +63,9 @@ func Parse(raw []byte) (Config, error) {
 	}
 	if err := c.Model.Validate(); err != nil {
 		return c, err
+	}
+	if c.QuotationWASMSHA256 != "" && c.QuotationWASMSHA256 != quotation.ApprovalModuleSHA256 {
+		return c, errors.New("unsupported quotation WASM digest")
 	}
 	if c.Embedding != nil {
 		if err := c.Embedding.Validate(); err != nil {
@@ -208,6 +213,12 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	}()
 	// Bind queued work to installation and approved model configuration, independent of transport mode.
 	store := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+	if c.QuotationWASMSHA256 != "" {
+		store, err = store.WithQuotationSandbox(c.QuotationWASMSHA256)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if c.Retrieval != nil {
 		store, err = store.WithRetrieval(*c.Retrieval, embedder)
 		if err != nil {

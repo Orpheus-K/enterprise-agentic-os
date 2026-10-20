@@ -14,7 +14,7 @@
 
 验证：[沙箱测试](../services/core/internal/sandbox/wasm_test.go) 使用手工组装的模块覆盖运算、篡改摘要、未知导出、宿主导入、内存上限与死循环。去掉摘要校验、内存上限或上下文中断的变异均使测试失败或超时。
 
-## 固定折扣规则模块（库层）
+## 固定折扣规则模块（WASM）
 
 `quotation.ApprovalInSandbox` 在新沙箱中调用固定 SHA-256 的 [approval.wasm](../services/core/internal/quotation/rules/approval.wasm)，源文件为同目录 approval.wat。输入为标准总额、拟报总额（整数分）和 1—10000 基点阈值；金额须满足 1 ≤ 拟报总额 ≤ 标准总额 ≤ MaxMinor。宿主和模块各自校验，非法输入失败，不把错误当作无需审批。
 
@@ -22,7 +22,11 @@
 
 构建使用 WABT 1.0.34：`wat2wasm services/core/internal/quotation/rules/approval.wat -o services/core/internal/quotation/rules/approval.wasm`。摘要为 `b1899480373d1df63263bc8988fd36fe164fa9cec28c76c5dd436d53a9b49ec7`。二进制入库，正常 Go 构建不依赖 WABT；改变模块须重新构建、审查摘要并认证规则。差分测试用 Go big.Int 作为独立参照，覆盖阈值前后、最大金额、固定随机样本、非法输入及取消。
 
-当前只完成可调用模块；Worker 报价路径仍使用既有 Go 核算，未自动切换，也不把制品摘要视为某客户的管理员批准。下一片须把显式启用、模块摘要、在途运行版本与改单复核接入，再做贯通测试。
+运行时通过 `quotation_wasm_sha256` 显式配置上述摘要；未知摘要启动拒绝，省略保持原 Go 路径。摘要纳入安装运行版本，开启/关闭/更换模块不接管旧版本任务或审批；原版本在途任务需由原批准配置处理。构造本身不运行模块。
+
+启用后 SaveQuotation 在入库前运行折扣规则复核；AmendQuotation 在当前任务/审批锁和授权检查后，对新版本重新复核。目录验证、金额汇总、草稿摘要及独立大整数校验仍由可信 Go 执行，WASM 复核结果不符、取消、陷阱或超时均失败，不回退。改单仍创建新审批，即使价格提高到阈值之上也不能沿用旧审批。该路径只隔离折扣规则，不宣称整套报价或模型生成代码均已隔离。
+
+验证：配置/摘要指纹测试、取消与不一致拒绝测试，及真实 PG＋MCP/模型替身的 wasm_normal、wasm_boundary、wasm_checkpoint_failure 贯通场景，覆盖七五折审批、八折边界、改单重审与工具结果恢复。
 
 ## 未实现（保持禁用）
 - 容器/gVisor Python 路线：本机无容器运行时，尚无镜像、挂载与网络隔离实现，也无任何运行路径执行模型生成的 Python。

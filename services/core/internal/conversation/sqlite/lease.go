@@ -128,6 +128,11 @@ func (s *Inbox) Transition(ctx context.Context, task *conversation.Task, to conv
 	}
 	terminal := to == conversation.Succeeded || to == conversation.Failed || to == conversation.Unknown
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		if to == conversation.DeliveryRunning {
+			if err := s.checkApproval(ctx, tx, task.ID); err != nil {
+				return err
+			}
+		}
 		args := []any{string(to), reason, string(to), response, terminal, terminal}
 		args = append(args, s.leaseArgs(task)...)
 		err := changed(tx.ExecContext(ctx, `UPDATE channel_tasks SET state=?,reason=?,

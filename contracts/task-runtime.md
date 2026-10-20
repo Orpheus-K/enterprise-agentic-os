@@ -80,9 +80,17 @@ schema 19 增加不可变会话引用检查点；字段、写入阶段、恢复�
 
 ## SQLite 基础文本任务租约
 
-`conversation/sqlite.Inbox` 已提供 Claim、Authorize、Renew、Transition、RecoverExpired 库接口，复用共同 State/ValidTransition。仅支持 pending、claimed、model_running、delivery_pending、delivery_running 和基础终态；工具与审批状态尚未接入。
+`conversation/sqlite.Inbox` 已提供 Claim、Authorize、Renew、Transition、RecoverExpired 库接口，复用共同 State/ValidTransition。支持基础文本任务与下述审批等待/终态；工具状态尚未接入。
 
 - SQLite 用 BEGIN IMMEDIATE 串行取得写权后再检查数据库时间，不模拟 PostgreSQL 的 SKIP LOCKED 行锁。90 秒租约、所有者/世代/版本/安装过滤、到期拒写以及每轮最多 100 条外部意图转 unknown 与 PG 一致。
 - 初始步骤版本为 1，认领递增；状态、响应和审计同事务，步骤审计唯一。迁移 schema 3 重建约束并保留 schema 2 的 pending 任务、正文和历史审计；须先停止旧制品再迁移。
-- 消费方在模型与发送前调用 Authorize，恢复重验当前映射；不将认领或续租视为授权。尚无 SQLite Worker 接线、审批、技能、工具、人工核对或运维查询；禁止真实渠道启用。
+- 消费方在模型与发送前调用 Authorize，恢复重验当前映射；不将认领或续租视为授权。尚无 SQLite Worker 接线、技能、工具、人工核对或运维查询；禁止真实渠道启用。
 - PG/SQLite 共用 `conversation/contracttest.RunLeases`，验证并发认领、范围隔离、重启重领、过期/旧世代/旧版本拒写、响应复用、撤权、成功终态、未知意图不重放与审计故障回滚。此证据不代表完整轻量运行时验收。
+
+## SQLite 原响应审批
+
+schema 5 保存任务入队时的审批成员和期限，支持 WithApproval、SuspendApproval、InspectApproval、DecideApproval、ExpireApprovals。沿用上文原响应审批契约：挂起清除租约；审批绑定版本、精确正文摘要和数据库期限；读取必须留下访问审计；回调重验当前映射/能力和指定成员；相同请求重复返回原决定，决定响应不含正文。
+
+批准后任务恢复可认领的 delivery_pending；发送意图前再次验证批准、正文、期限和当前审批人映射/能力。拒绝与到期不能认领；到期扫描每次最多 100 条。审批记录、任务状态、步骤审计同事务；任何审计失败回滚。写事务取得锁后执行授权，SQLite 不模拟 PG 的 RLS。
+
+SQLite 的 NotifySubject 配置明确拒绝：审批通知、报价改单、飞书卡片和 HTTP 接线尚未移植；此库层验证不构成真实渠道验收。PG/SQLite 共用 `conversation/contracttest.RunApprovals`，覆盖独立实例并发重复决定、重启与取消策略后保持原审批、拒绝、越版本/摘要拒绝、撤权、内容变更、到期及挂起/读取/决定/到期审计故障；schema 4→5 迁移保留响应、租约、版本和历史事件。

@@ -10,7 +10,7 @@ import (
 // A nil store proves the audience gate returns before any database access.
 func TestGroupAudienceRequiresConfirmedScopeBeforeReading(t *testing.T) {
 	var s *Store
-	for _, a := range []Audience{{Group: true}, {Group: true, RecipientsConfirmed: false}} {
+	for _, a := range []Audience{{Group: true}} {
 		out, err := s.Ground(t.Context(), identity.ExternalIdentity{}, []Reference{{}}, a)
 		if !errors.Is(err, ErrAudienceUnconfirmed) || out.Evidence != nil || out.Dropped != 0 {
 			t.Fatal("unconfirmed group read bodies", out, err)

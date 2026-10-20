@@ -18,11 +18,10 @@ var ErrContextTooLarge = errors.New("knowledge context exceeds budget")
 
 const maxContextBytes = 64 << 10
 
-// Audience names who will see the evidence. Group delivery reaches recipients outside the
-// current actor's authorization, so bodies require an explicitly confirmed recipient scope.
+// Audience gates this single-actor consumer. Group deliveries require a separate
+// certified consumer of the audience proof library and stay disabled here.
 type Audience struct {
-	Group               bool
-	RecipientsConfirmed bool
+	Group bool
 }
 
 // Grounding is the evidence still authorized for the current actor at read time. Dropped counts
@@ -33,7 +32,9 @@ type Grounding struct {
 }
 
 func (a Audience) check() error {
-	if a.Group && !a.RecipientsConfirmed {
+	// A caller-supplied boolean cannot establish authorization for a group.
+	// Group proof is a separate library, pending a certified channel consumer.
+	if a.Group {
 		return ErrAudienceUnconfirmed
 	}
 	return nil

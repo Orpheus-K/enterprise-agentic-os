@@ -62,10 +62,6 @@ func TestGroundGroupAudienceAndIdentityFailures(t *testing.T) {
 		t.Fatal("group body loaded without confirmed scope", err)
 	}
 	f.count(t, "SELECT count(*) FROM knowledge.audit WHERE action='read'", 0)
-	got, err := f.store.Ground(t.Context(), f.reader, refs, Audience{Group: true, RecipientsConfirmed: true})
-	if err != nil || len(got.Evidence) != 2 {
-		t.Fatal("confirmed group scope", got, err)
-	}
 	// Audit failure withholds evidence rather than returning unrecorded reads.
 	if _, err := f.pg.Admin.Exec(t.Context(), "ALTER TABLE knowledge.audit ADD CONSTRAINT synthetic_ground_read CHECK(action<>'read') NOT VALID"); err != nil {
 		t.Fatal(err)

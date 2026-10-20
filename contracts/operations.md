@@ -38,6 +38,14 @@ schema 18 起，对齐 R15/R18 基础统计、V06/V13：
 
 验证：[报表真实 PG 测试](../services/core/internal/operations/report_integration_test.go)。去掉应用过滤、游标范围或留痕的变异均使测试失败。
 
+## SQLite 单任务审计查询
+
+`conversation/sqlite.Inbox.ReadAudit` 已实现库层分页：在同一写事务内复核当前身份与 audit.read，按租户/应用/任务过滤后计算任务内序号，再读取并记录返回条数和当前成员。执行 Revision 不限制历史审计查询；正文与外部身份不进入 AuditPage。分页参数、空页和失败不返回数据的语义与 PostgreSQL 一致。
+
+schema 6 保留访问历史并移除访问留痕对任务的外键；这样不存在或跨范围任务可统一返回空页且记录访问，不通过数据库错误泄露存在性。成员外键保留。两个驱动共用 `conversation/contracttest.RunAudit`，覆盖交错全局事件下的局部分页、跨租户/应用、空页、越界、撤权/改绑、取消和留痕故障回滚。
+
+此片未提供 SQLite 运维 HTTP、任务清单或统计查询，也未完成未知结果人工核对；完整轻量运行入口仍关闭。
+
 ## 关联执行证据
 
 复用 OTel Go SDK；记录入口、身份复核、模型调用、回复和任务执行。入口 Trace/Span 标识持久化；异步执行建立新 Trace 并链接入口，状态审计和日志关联 task_id/trace_id。旧任务保留空链路标识，不伪造历史证据。

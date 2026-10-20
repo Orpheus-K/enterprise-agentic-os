@@ -79,9 +79,14 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	approvals, err := migrations.ReadFile("migrations/00005_approvals.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	old, err := goose.NewProvider(goose.DialectSQLite3, db,
 		fstest.MapFS{"00001_identity.sql": &fstest.MapFile{Data: source}, "00002_inbox.sql": &fstest.MapFile{Data: inbox},
-			"00003_leases.sql": &fstest.MapFile{Data: leases}, "00004_operation_grants.sql": &fstest.MapFile{Data: grants}},
+			"00003_leases.sql": &fstest.MapFile{Data: leases}, "00004_operation_grants.sql": &fstest.MapFile{Data: grants},
+			"00005_approvals.sql": &fstest.MapFile{Data: approvals}},
 		goose.WithDisableGlobalRegistry(true))
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +103,7 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 		"INSERT INTO channel_audit(tenant_id,task_id,state,reason) VALUES('tenant','task','pending','')",
 		"UPDATE channel_tasks SET state='delivery_pending',response='saved checkpoint',lease_owner='owner',lease_until=123,lease_generation=2,step_version=4 WHERE id='task'",
 		"INSERT INTO channel_audit(tenant_id,task_id,state,reason,lease_generation,step_version) VALUES('tenant','task','delivery_pending','',2,4)",
+		"INSERT INTO channel_audit_reads(id,tenant_id,member_id,app_id,task_id,row_count,trace_id) VALUES('old-read','tenant','member','app','task',1,'old-trace')",
 	} {
 		if _, err := db.ExecContext(ctx, query); err != nil {
 			t.Fatal(err)
@@ -127,6 +133,9 @@ func TestUpgradePreservesIdentity(t *testing.T) {
 	}
 	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_audit WHERE task_id='task' AND step_version=4 AND lease_generation=2").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("checkpoint audit lost during upgrade: %d %v", count, err)
+	}
+	if err := current.QueryRowContext(ctx, "SELECT count(*) FROM channel_audit_reads WHERE id='old-read' AND row_count=1 AND trace_id='old-trace'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("access receipt lost during upgrade: %d %v", count, err)
 	}
 }
 

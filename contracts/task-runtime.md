@@ -77,3 +77,12 @@
 审批通知的发送状态以独立 operation_id 进入任务审计，不推进任务步骤；配置、撤权与未知发送结果规则见 [通知契约](approval-notices.md)。
 
 schema 19 增加不可变会话引用检查点；字段、写入阶段、恢复与重验约束见 [知识契约](knowledge.md#持久化会话引用消费者前置)。可选检索在 model_running 意图后调用 Embedding；模型、工具、审批与交付的重验边界见 [会话检索与交付](knowledge.md#会话检索与交付)。
+
+## SQLite 基础文本任务租约
+
+`conversation/sqlite.Inbox` 已提供 Claim、Authorize、Renew、Transition、RecoverExpired 库接口，复用共同 State/ValidTransition。仅支持 pending、claimed、model_running、delivery_pending、delivery_running 和基础终态；工具与审批状态尚未接入。
+
+- SQLite 用 BEGIN IMMEDIATE 串行取得写权后再检查数据库时间，不模拟 PostgreSQL 的 SKIP LOCKED 行锁。90 秒租约、所有者/世代/版本/安装过滤、到期拒写以及每轮最多 100 条外部意图转 unknown 与 PG 一致。
+- 初始步骤版本为 1，认领递增；状态、响应和审计同事务，步骤审计唯一。迁移 schema 3 重建约束并保留 schema 2 的 pending 任务、正文和历史审计；须先停止旧制品再迁移。
+- 消费方在模型与发送前调用 Authorize，恢复重验当前映射；不将认领或续租视为授权。尚无 SQLite Worker 接线、审批、技能、工具、人工核对或运维查询；禁止真实渠道启用。
+- PG/SQLite 共用 `conversation/contracttest.RunLeases`，验证并发认领、范围隔离、重启重领、过期/旧世代/旧版本拒写、响应复用、撤权、成功终态、未知意图不重放与审计故障回滚。此证据不代表完整轻量运行时验收。

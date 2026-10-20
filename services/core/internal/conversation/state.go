@@ -23,8 +23,9 @@ const (
 var ErrLeaseLost = errors.New("task lease or step version lost")
 var ErrInvalidTransition = errors.New("invalid task transition")
 
-// Persist intent before each external call; only checkpoints without intent are reclaimable.
-func validTransition(from, to State) bool {
+// ValidTransition requires an intent before each external call. Only checkpoints
+// without an external intent are reclaimable.
+func ValidTransition(from, to State) bool {
 	switch from {
 	case ToolPending:
 		return to == ToolRunning || to == Failed

@@ -190,7 +190,7 @@ func (s *Store) Authorize(ctx context.Context, t *Task) error {
 }
 
 func (s *Store) Transition(ctx context.Context, t *Task, to State, reason, response string) error {
-	if !validTransition(t.State, to) || (to == DeliveryPending && response == "") || (to != DeliveryPending && response != "") {
+	if !ValidTransition(t.State, to) || (to == DeliveryPending && response == "") || (to != DeliveryPending && response != "") {
 		return ErrInvalidTransition
 	}
 	terminal := to == Succeeded || to == Failed || to == Unknown

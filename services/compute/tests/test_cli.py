@@ -14,7 +14,7 @@ def test_installed_entrypoint_accepts_help() -> None:
     assert result.stderr == ""
 
 
-def test_unknown_options_fail() -> None:
+def test_unisolated_service_is_refused() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "agentos_compute", "--serve"],
         capture_output=True,
@@ -22,3 +22,4 @@ def test_unknown_options_fail() -> None:
         check=False,
     )
     assert result.returncode == 2
+    assert "isolation_unavailable" in result.stderr

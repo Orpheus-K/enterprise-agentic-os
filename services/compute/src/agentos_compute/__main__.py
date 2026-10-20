@@ -5,11 +5,15 @@ from importlib.metadata import version
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="AgentOS compute package; RPC runtime not implemented"
-    )
+    parser = argparse.ArgumentParser(description="AgentOS stateless compute package")
     parser.add_argument("--version", action="version", version=version("agentos-compute"))
-    parser.parse_args()
+    parser.add_argument("--serve", action="store_true", help="requires verified Worker isolation")
+    args = parser.parse_args()
+    if args.serve:
+        # No isolation provider is implemented. Environment flags cannot attest isolation.
+        parser.error(
+            "isolation_unavailable: no verified Worker isolation provider; service disabled"
+        )
     parser.print_help()
 
 

@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 11 项进行中：新增 contracts/compute.proto 与可重生成的 Python gRPC 绑定，包含租户/任务/步骤、执行版本、租约世代、截止时间、能力版本和对象摘要；文档内容不放进 RPC。CLI --serve 明确 isolation_unavailable，无隔离提供方不能启用。锁定 grpcio/protobuf/pypdf/python-docx；pnpm check:python 通过（m3-python-contract-check.log，4 项测试含真实 loopback 的未实现拒绝、生成物一致性）。当前仅契约与禁用边界，文档提取实现及授权/取消/限额反例尚待完成，不宣称 Worker 已可用；不涉及数据库，未重跑 PG。额度最近剩余 2%，未使用重置卡。
+
 - 受测目录为 E:/agent-project/.tools/sqlite-approval-verify；4fe8851 及其前三个指定祖先已推送 origin/codex/m3-operations-storage。
 - 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 2 项原四个提交/CI 已闭环；第 3 项 OAuth 合成流程与管理入口完成（见下）；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成；第 7 项知识审计独立授权/统计已完成（见下）；第 8 项 SBOM/Windows 与 Linux/amd64 构建验包已完成（见下）；第 5 项双驱动联合恢复及管理入口已完成（见下）；其余 PDF、Python Worker、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
 - 第 4 项证据：pnpm check 退出 0（E:/agent-project/.tools/m3-online-backup-check.log）；补充在线恢复审批/撤权后 go test ./internal/bootstrap ./internal/sqlitedb ./cmd/migrate 退出 0（m3-online-backup-final.log）。首次定向测试因宿主默认临时目录/缓存访问拒绝失败，改用既有 E 盘工具目录后通过；未改变全局环境。无 PG/schema 变更，未重复全量 test:db。

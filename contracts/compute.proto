@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package agentos.compute.v1;
+
+// References only: document bytes never travel in this RPC.
+service DocumentWorker {
+  rpc Extract(ExtractRequest) returns (ExtractResponse);
+}
+
+message Execution {
+  string tenant_id = 1;
+  string task_id = 2;
+  string step_id = 3;
+  string execution_revision = 4;
+  uint64 lease_generation = 5;
+  string request_id = 6;
+  string trace_id = 7;
+  int64 deadline_unix_ms = 8;
+  string capability_version = 9;
+}
+
+message ObjectReference {
+  string id = 1;
+  string sha256 = 2;
+  uint64 size_bytes = 3;
+  string media_type = 4;
+}
+
+message ExtractRequest {
+  Execution execution = 1;
+  ObjectReference input = 2;
+  // Opaque scoped grants, never general credentials or arbitrary URLs.
+  string input_grant = 3;
+  string output_grant = 4;
+}
+
+message ExtractResponse {
+  Execution execution = 1;
+  string input_sha256 = 2;
+  ObjectReference output = 3;
+  uint32 block_count = 4;
+}

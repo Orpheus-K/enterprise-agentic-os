@@ -35,26 +35,30 @@ func (s *Store) Publish(ctx context.Context, actor identity.ExternalIdentity, p 
 		return err
 	}
 	return s.within(ctx, actor, func(q database.Queries) error {
-		if err := s.putContent(ctx, q, p.Content); err != nil {
-			return err
-		}
-		if err := s.publishVectors(ctx, q, p.Vectors); err != nil {
-			return err
-		}
-		if err := s.putACL(ctx, q, p.ACL); err != nil {
-			return err
-		}
-		if err := s.syncAllowed(ctx, q, p.Content.SourceID); err != nil {
-			return err
-		}
-		var current bool
-		if err := q.QueryRow(ctx, `SELECT knowledge.source_ready($1,$2) AND $3::timestamptz>clock_timestamp()`,
-			p.Content.SourceID, p.ACL.SourceEpoch, p.ACL.ValidUntil).Scan(&current); err != nil {
-			return err
-		}
-		if !current {
-			return ErrUnavailable
-		}
-		return nil
+		return s.publish(ctx, q, p)
 	})
+}
+
+func (s *Store) publish(ctx context.Context, q database.Queries, p Publication) error {
+	if err := s.putContent(ctx, q, p.Content); err != nil {
+		return err
+	}
+	if err := s.publishVectors(ctx, q, p.Vectors); err != nil {
+		return err
+	}
+	if err := s.putACL(ctx, q, p.ACL); err != nil {
+		return err
+	}
+	if err := s.syncAllowed(ctx, q, p.Content.SourceID); err != nil {
+		return err
+	}
+	var current bool
+	if err := q.QueryRow(ctx, `SELECT knowledge.source_ready($1,$2) AND $3::timestamptz>clock_timestamp()`,
+		p.Content.SourceID, p.ACL.SourceEpoch, p.ACL.ValidUntil).Scan(&current); err != nil {
+		return err
+	}
+	if !current {
+		return ErrUnavailable
+	}
+	return nil
 }

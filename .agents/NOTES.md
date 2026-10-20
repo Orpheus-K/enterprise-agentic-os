@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 12 项完成无人值守评测范围：8 篇/6 查询中文合成语料、CLI、召回/过滤召回/越权指标及逐查询结果；无权限分母为零时 null。关闭过滤、后过滤丢召回、后端篡改评分事实与答案隔离负例通过。实际 CLI 可复现 Recall@3=37/60、Filtered Recall@3=0.8、越权 0；结果与候选认证边界单点见 contracts/retrieval-evaluation.md。pnpm check 退出 0（m3-retrieval-evaluation-check.log）；无数据库修改，未重复 PG。余项为第 13 项用章授权模型、第 15 项运维脚本及最终逐项核验/CI 收口。
+
 - 第 10 项库层范围完成：schema 26 的 PDF 预留/ready、独立发布授权、当前审批资格、对象回读摘要和原子文档审计；同版本只获得一次生成资格，未知不重试。完整 pnpm check、最终 check:go、全量 test:db、最后 TestQuoteDocument（含跨应用 RLS）均退出 0，日志 m3-pdf-ledger-check/final-go/full-db/final-targeted.log。测试库/角色残留 0，专用 PG 已停止。用章仅设计于 contracts/quotation.md，真实对象存储/外发/印章未接入；第 13 项模型仍待实施。
 - 第 12 项进行中：新增 retrievaleval/CLI 与 8 文档、6 查询合成中文语料；字符二元组基线 Recall@3=0.616667、过滤后=0.8、越权=0，分母差异和同义漏召回见 contracts/retrieval-evaluation.md。单元测试和 CLI 已运行；最后新增的评测输入隔离仍需复验。pg_search/BM25 保持候选，未安装或标记支持。
 

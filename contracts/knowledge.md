@@ -183,3 +183,7 @@ schema 19 提供 `channel.tasks.knowledge_refs` 与 `conversation.Store.SaveKnow
 - 恢复与范围：delivery_pending 重启复用原响应和引用，不重新调用 Embedding/聊天；内容版本、ACL、健康或身份失效阻断整个派生回答。仍只支持现有 p2p 通道，群聊保持拒绝；不包含原生连接器、批量索引、中文质量认证或混合召回。
 
 验证：[启动装配与空间校验](../services/core/internal/bootstrap/retrieval_integration_test.go)、[会话/审批/工具/恢复真实 PG 测试](../services/core/internal/feishu/retrieval_integration_test.go)、[配置指纹测试](../services/core/internal/bootstrap/revision_test.go)。合成来源、模型及 MCP 替身不代表真实飞书云文档或模型质量验收。
+
+## 中文合成评测
+
+[评测框架与报告](retrieval-evaluation.md) 提供 A05/V12 的离线合成基线、授权过滤召回和泄漏负面对照；它不替代上述生产 PG 授权、真实 Embedding 质量或中文分词认证。pg_search/BM25 继续为候选。

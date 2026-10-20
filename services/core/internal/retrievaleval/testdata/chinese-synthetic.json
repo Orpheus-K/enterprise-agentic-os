@@ -1,0 +1,20 @@
+{
+  "documents": [
+    {"id":"repair","tenant":"alpha","text":"设备维修流程：断电检查，更换零件，完成测试。","members":["sales","engineer"],"published":true,"healthy":true},
+    {"id":"care","tenant":"alpha","text":"机器保养规程：停机清洁并记录检修结果。","members":["engineer"],"published":true,"healthy":true},
+    {"id":"price","tenant":"alpha","text":"销售报价规则：八折以下需要主管审批。","members":["sales"],"published":true,"healthy":true},
+    {"id":"leave","tenant":"alpha","text":"员工请假流程：提交申请并由经理审核。","members":["sales","engineer"],"published":true,"healthy":true},
+    {"id":"other-tenant","tenant":"beta","text":"销售报价规则","members":["sales"],"published":true,"healthy":true},
+    {"id":"draft","tenant":"alpha","text":"销售报价规则","members":["sales"],"published":false,"healthy":true},
+    {"id":"unhealthy","tenant":"alpha","text":"销售报价规则","members":["sales"],"published":true,"healthy":false},
+    {"id":"secret","tenant":"alpha","text":"销售报价规则","members":["director"],"published":true,"healthy":true}
+  ],
+  "queries": [
+    {"id":"repair-direct","tenant":"alpha","member":"engineer","text":"设备维修流程","relevant":["repair","care"]},
+    {"id":"care-synonym","tenant":"alpha","member":"engineer","text":"机器保养规程","relevant":["repair","care"]},
+    {"id":"price-prefilter","tenant":"alpha","member":"sales","text":"销售报价规则","relevant":["price","other-tenant","draft","unhealthy","secret"]},
+    {"id":"leave-direct","tenant":"alpha","member":"sales","text":"员工请假流程","relevant":["leave"]},
+    {"id":"no-visible-evidence","tenant":"alpha","member":"guest","text":"销售报价规则","relevant":["price","secret"]},
+    {"id":"cross-tenant","tenant":"beta","member":"sales","text":"销售报价规则","relevant":["price","other-tenant","draft","unhealthy","secret"]}
+  ]
+}

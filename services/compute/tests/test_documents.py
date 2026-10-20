@@ -5,6 +5,7 @@ import zipfile
 import pytest
 from docx import Document
 from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from agentos_compute.documents import DOCX, MAX_INPUT, PDF, DocumentError, extract
 
@@ -96,3 +97,56 @@ def test_cancel_during_archive_validation() -> None:
 
     with pytest.raises(TimeoutError, match="cancelled"):
         extract(docx_bytes(), DOCX, cancelled)
+
+
+def test_pdf_extracts_real_text() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=200, height=200)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject({NameObject("/F1"): font}),
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 12 Tf 10 100 Td (Synthetic invoice 100) Tj ET")
+    page[NameObject("/Contents")] = stream
+    output = io.BytesIO()
+    writer.write(output)
+    assert json.loads(extract(output.getvalue(), PDF, active))["blocks"] == [
+        "Synthetic invoice 100"
+    ]
+
+
+def test_expanded_archive_limit() -> None:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"x" * (16 * 1024 * 1024 + 1))
+    assert len(output.getvalue()) < MAX_INPUT
+    with pytest.raises(DocumentError, match="archive_size"):
+        extract(output.getvalue(), DOCX, active)
+
+
+def test_output_limit() -> None:
+    document = Document()
+    document.add_paragraph("文" * 400000)
+    output = io.BytesIO()
+    document.save(output)
+    with pytest.raises(DocumentError, match="output_size"):
+        extract(output.getvalue(), DOCX, active)
+
+
+def test_pdf_page_limit() -> None:
+    writer = PdfWriter()
+    for _ in range(101):
+        writer.add_blank_page(width=100, height=100)
+    output = io.BytesIO()
+    writer.write(output)
+    with pytest.raises(DocumentError, match="page_limit"):
+        extract(output.getvalue(), PDF, active)

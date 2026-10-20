@@ -1,5 +1,6 @@
 import hashlib
 import io
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -193,3 +194,79 @@ def test_real_grpc_contract(failure: str) -> None:
                     assert "synthetic-secret" not in caught.value.details()
         finally:
             server.stop(0).wait(2)
+
+
+def test_rpc_concurrency_cancellation_and_oversize() -> None:
+    objects = Objects()
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def blocked_read(request: Request, limit: int, check: Callable[[], None]) -> bytes:
+        entered.set()
+        try:
+            assert release.wait(5), "test release timed out"
+            # Client cancellation is asynchronous; wait for the server context,
+            # not a scheduling assumption about when the cancel frame arrives.
+            cancellation_deadline = time.monotonic() + 1
+            while time.monotonic() < cancellation_deadline:
+                check()
+                threading.Event().wait(0.01)
+            raise AssertionError("server did not observe RPC cancellation")
+        finally:
+            finished.set()
+
+    objects.read = blocked_read
+    request = objects.request
+    message = wire.ExtractRequest(
+        execution=wire.Execution(**asdict(request.execution)),
+        input=wire.ObjectReference(**asdict(request.input)),
+        input_grant=request.input_grant,
+        output_grant=request.output_grant,
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        server = grpc.server(executor, options=SERVER_OPTIONS)
+        register(server, DocumentWorker(objects, concurrency=1))
+        port = server.add_insecure_port("127.0.0.1:0")
+        assert port
+        server.start()
+        try:
+            with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+                stub = compute_pb2_grpc.DocumentWorkerStub(channel)
+                pending = stub.Extract.future(message, timeout=5)
+                assert entered.wait(3)
+                with pytest.raises(grpc.RpcError) as busy:
+                    stub.Extract(message, timeout=2)
+                assert busy.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+                assert busy.value.details() == "worker_busy"
+                assert pending.cancel()
+                with pytest.raises(grpc.FutureCancelledError):
+                    pending.result()
+                release.set()
+                assert finished.wait(3)
+                oversized = wire.ExtractRequest(input_grant="x" * 40000)
+                with pytest.raises(grpc.RpcError) as large:
+                    stub.Extract(oversized, timeout=2)
+                assert large.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+        finally:
+            release.set()
+            server.stop(0).wait(3)
+    assert not objects.staged
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("lease_generation", 0),
+        ("execution_revision", "latest"),
+        ("capability_version", "document.extract.v2"),
+        ("deadline_unix_ms", 1),
+        ("tenant_id", "not-uuid"),
+    ],
+)
+def test_invalid_execution_has_no_output(field: str, value: object) -> None:
+    objects = Objects()
+    execution = replace(objects.request.execution, **{field: value})
+    with pytest.raises(WorkerError, match="invalid_execution"):
+        DocumentWorker(objects).extract(replace(objects.request, execution=execution), active)
+    assert not objects.staged

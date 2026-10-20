@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 11 项无人值守库层范围已完成：真实 gRPC 并发繁忙、客户端取消、32 KiB 消息限制和执行版本/租约/截止时间负例；真实 PDF 文本、中文 DOCX、101 页、归档展开和输出超限验证通过。pnpm check:python 退出 0，38 项测试（m3-python-rpc-boundaries.log）；完整 pnpm check 退出 0（m3-python-full-check.log），含构建、前端/Go/Python 检查与制品冒烟；无数据库/schema 变化，未重跑 PG。没有可信隔离提供方，CLI 继续拒绝；真实对象存储/Go 任务消费者和容器隔离不在本次库层完成声明内。下一项进入正式报价 PDF 与用章库。用户指定的到期重置卡已在额度剩余 1% 时成功使用，查询已用 0%、剩余卡 2，不再重复兑换。
+
 - 第 11 项 gRPC 适配已实现：真实 loopback 验证提取成功、完整执行绑定、撤权、摘要错误、后端错误脱敏与无截止时间拒绝；28 项测试及 lint/mypy 通过（m3-python-rpc-check.log）。协议/边界见 contracts/compute.md；库层状态仍待补并发/取消 RPC、尺寸及解析边界反例后最终签收，不宣称完成真实隔离或业务接线。
 
 - 第 11 项 Worker 库补片：不可变执行/对象引用，校验 UUID、版本、租约、30 秒截止时间及摘要；注入对象适配器必须逐次核对完整授权/撤权，读取和暂存均接收取消检查。暂存前后重验授权，输出回执摘要不符或取消后迟到均不返回结果；有界并发且异常释放槽位，无任务主状态。23 项 Python 测试及 lint/mypy 通过（m3-python-worker-check.log）；gRPC 适配及更完整契约负例尚待完成。
@@ -11,7 +13,7 @@
 - 第 11 项进行中：新增 contracts/compute.proto 与可重生成的 Python gRPC 绑定，包含租户/任务/步骤、执行版本、租约世代、截止时间、能力版本和对象摘要；文档内容不放进 RPC。CLI --serve 明确 isolation_unavailable，无隔离提供方不能启用。锁定 grpcio/protobuf/pypdf/python-docx；pnpm check:python 通过（m3-python-contract-check.log，4 项测试含真实 loopback 的未实现拒绝、生成物一致性）。当前仅契约与禁用边界，文档提取实现及授权/取消/限额反例尚待完成，不宣称 Worker 已可用；不涉及数据库，未重跑 PG。额度最近剩余 2%，未使用重置卡。
 
 - 受测目录为 E:/agent-project/.tools/sqlite-approval-verify；4fe8851 及其前三个指定祖先已推送 origin/codex/m3-operations-storage。
-- 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 2 项原四个提交/CI 已闭环；第 3 项 OAuth 合成流程与管理入口完成（见下）；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成；第 7 项知识审计独立授权/统计已完成（见下）；第 8 项 SBOM/Windows 与 Linux/amd64 构建验包已完成（见下）；第 5 项双驱动联合恢复及管理入口已完成（见下）；其余 PDF、Python Worker、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
+- 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 2 项原四个提交/CI 已闭环；第 3 项 OAuth 合成流程与管理入口完成（见下）；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；第 9、14 项库层/文档范围已完成（见下）；第 6 项文本产物扫描库与指令计量评估已完成；第 7 项知识审计独立授权/统计已完成（见下）；第 8 项 SBOM/Windows 与 Linux/amd64 构建验包已完成（见下）；第 5 项双驱动联合恢复及管理入口已完成（见下）；第 11 项 Python Worker 库层与契约已完成（见上）；其余 PDF、中文评测、用章策略与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
 - 第 4 项证据：pnpm check 退出 0（E:/agent-project/.tools/m3-online-backup-check.log）；补充在线恢复审批/撤权后 go test ./internal/bootstrap ./internal/sqlitedb ./cmd/migrate 退出 0（m3-online-backup-final.log）。首次定向测试因宿主默认临时目录/缓存访问拒绝失败，改用既有 E 盘工具目录后通过；未改变全局环境。无 PG/schema 变更，未重复全量 test:db。
 - 第 2 项：CI 39481450456 的 Windows 离线安装测试在首次 PowerShell 验包时触发 20 秒超时（ETIMEDOUT），打包成功；仅为完整验包设置 120 秒上限，二进制冒烟保持 20 秒，不重试、不跳过校验。9aa64cc 的 CI 39482454535 全部 success（含 Windows 离线与 Linux foundation/PG/race/e2e），原四个提交已闭环；本地安装回归 m3-ci-offline-timeout.log 退出 0。后续 CI 结果见下方条目。
 

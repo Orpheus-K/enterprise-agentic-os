@@ -1,11 +1,18 @@
 # 接续项目迭代
 
+## 当前切片：无人值守补齐（2026-10-21）
+
+- 已核对受测目录与干净工作树；4fe8851 及其前三个指定祖先已推送 origin/codex/m3-operations-storage，远端 CI 待完成。
+- 本轮范围：用户列出的 15 项；逐片实施。第 1 项已修正；第 4 项 WAL 在线快照和显式 CLI 已实现，库层正反例及恢复后的审批/撤权通过；其余 OAuth、联合恢复、扫描、统计、SBOM、多平台、群聊库、PDF、Python Worker、中文评测、用章策略、渠道核实与运维脚本待实施。真实租户/群聊、容器隔离、真实印章及正式签名发行不纳入完成声明。
+- 第 4 项证据：pnpm check 退出 0（E:/agent-project/.tools/m3-online-backup-check.log）；补充在线恢复审批/撤权后 go test ./internal/bootstrap ./internal/sqlitedb ./cmd/migrate 退出 0（m3-online-backup-final.log）。首次定向测试因宿主默认临时目录/缓存访问拒绝失败，改用既有 E 盘工具目录后通过；未改变全局环境。无 PG/schema 变更，未重复全量 test:db。
+- 第 2 项：CI 39481450456 的 Windows 离线安装测试在首次 PowerShell 验包时触发 20 秒超时（ETIMEDOUT），打包成功；仅为完整验包设置 120 秒上限，二进制冒烟保持 20 秒，不重试、不跳过校验。修复远端验证待完成。
+
 ## 定位当前里程碑
 
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 停写备份恢复（2026-10-21）
+## 保留切片：SQLite 停写备份恢复（2026-10-21）
 
 - 范围：R03/R06/R19、A03/A04/A10、V03/V05/V15；agentos-migrate 增加 --sqlite-backup 与 --sqlite-restore。默认 DELETE 模式下持有排他锁复制，先验 schema/完整性/外键；生成摘要和时间清单。恢复先验证私有副本，再排他创建新目标，不覆盖、不迁移、不启动 Worker。占用/WAL/错误 schema/外键/篡改/缺失/已有目标明确失败；原 PG 命令不变。单点见 [SQLite 部署](../deploy/sqlite/README.md#停写备份与恢复)。
 - 行为：真实 SQLite 备份恢复后，审批等待可继续批准，审批人与发送者撤权继续阻断；成功、模型未知、发送未知和撤权失败任务不重放。定向 SQLite/bootstrap/Worker/CLI 测试退出 0，日志 E:/agent-project/.tools/m3-sqlite-backup-targeted.log；补外键及命令负例由 pnpm check 覆盖。
@@ -164,7 +171,7 @@
 - 贯通证据：`go test -tags=integration -count=1 -run '^TestNativeSyncPipeline$' -v ./internal/feishudocs` 全部 7 场景通过（`.tools/m3-source-conversation-targeted.log`）。原生/模型/发送为替身，PG 为真实实例，不代替真实租户联调或权限传播时延验收；本片未重跑无关模块。测试库/角色残留 0，集群已停止。
 - 下一片：核查真实租户授权与 Token 更新生命周期及 M3 剩余差距，按实际需求继续开发；当前仅环境变量载入用户 Token，尚无 OAuth 获取/自动刷新。SQLite 首版范围已确认，待实施，M3 不据此退出。
 
-## 当前切片：会话检索与交付（2026-10-20）
+## 保留切片：会话检索与交付（2026-10-20）
 
 - 实现：R03/R06/R10/R12/R13、A04/A05/A06/A08、T05/T06/T08/T09/T10/T13、V03/V06/V07/V08/V12 的执行与授权边界。配置 retrieval 固定空间、模型/版本、limit，启动验证空间与维度，指纹绑定嵌入配置；未启用保留纯聊天指纹。Worker 在外部意图后 Embed/Search/Ground 并持久化引用，后续工具回合复用且重验，响应附真实来源标题和锚点。契约单点见 [会话检索与交付](../contracts/knowledge.md#会话检索与交付)。
 - 守住交付：模型前续租、工具/发送意图在任务锁后用同一事务重验当前身份及全部引用；审批查看、决定、改单和通知另验审批人的知识权限。未知嵌入不自动重放；审计/数据库错误显式失败，不当作无资料。群聊仍由渠道拒绝。
@@ -204,7 +211,7 @@
 - 证据：故障注入在旧脚本上复现伪成功，在新脚本上通过，已纳入 CI。WSL 真实 PG schema22 演练通过（`.tools/m3-backup22-drill.log`）：未知输入/核对账本保留、manifest 损坏/非空目标/同数量错误摘要拒绝、运行身份 RLS/DDL 限制保留。测试库/角色清理，集群停止。无 Go/SQL 迁移变更，未重跑产品套件；本片远端待确认。仍要求停写，不能作为在线备份或外部副作用可重放证明。
 
 - 实现：[backup-restore.sh](../deploy/postgres/backup-restore.sh)；manifest 事实比对、校验和、非空目标拒绝。演练与未覆盖项见 [PG 指南](../deploy/postgres/README.md#备份与恢复)。演练脚本与凭证在 .tools（忽略），日志 m3-backup-drill.log，残留 0，集群已停止。
-- 未做：文件/密钥联合备份、在线一致备份、RTO/RPO、SQLite；离线安装包尚未开始。
+- 本片历史边界：当时未做联合/在线备份与离线包。当前已完成 SQLite 首版、停写备份恢复和 Windows 核心离线包；现状统一见顶部切片与 M3 退出差距。
 
 ## M3 WASM 沙箱切片
 

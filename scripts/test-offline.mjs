@@ -42,12 +42,12 @@ const powershell = path.join(
   process.env.SystemRoot,
   "System32/WindowsPowerShell/v1.0/powershell.exe",
 );
-function run(command, args, expected = 0, variables = env) {
+function run(command, args, expected = 0, variables = env, timeout = 20000) {
   const result = spawnSync(command, args, {
     cwd: temporary,
     env: variables,
     encoding: "utf8",
-    timeout: 20000,
+    timeout,
   });
   assert.equal(result.error, undefined);
   assert.equal(result.status, expected, result.stderr);
@@ -65,6 +65,10 @@ function verify(expected = 0) {
       path.join(installed, "Verify.ps1"),
     ],
     expected,
+    env,
+    // Cold Windows PowerShell startup plus hashing the entire package exceeded
+    // the binary smoke deadline on hosted Windows. Keep verification bounded.
+    120000,
   );
 }
 try {

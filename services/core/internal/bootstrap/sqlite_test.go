@@ -168,9 +168,10 @@ func sqliteEvent(t *testing.T) *http.Request {
 }
 
 func TestSQLiteOpenApprovalRestartAndRevocation(t *testing.T) {
-	for _, testCase := range []string{"success", "approver_revoked", "sender_revoked", "restored_success", "restored_approver_revoked", "restored_sender_revoked"} {
+	for _, testCase := range []string{"success", "approver_revoked", "sender_revoked", "restored_success", "restored_approver_revoked", "restored_sender_revoked", "online_success", "online_approver_revoked", "online_sender_revoked"} {
 		t.Run(testCase, func(t *testing.T) {
 			scenario := strings.TrimPrefix(testCase, "restored_")
+			scenario = strings.TrimPrefix(scenario, "online_")
 			c := sqliteConfig(t)
 			member := uuid.New()
 			c.Approval = &conversation.ApprovalPolicy{MemberID: member, TTLSeconds: 3600}
@@ -252,12 +253,17 @@ func TestSQLiteOpenApprovalRestartAndRevocation(t *testing.T) {
 			if channel.Readiness.Snapshot(t.Context()).Storage != "unavailable" {
 				t.Fatal("closed database ready")
 			}
-			if strings.HasPrefix(testCase, "restored_") {
+			if strings.HasPrefix(testCase, "restored_") || strings.HasPrefix(testCase, "online_") {
+				backupFn := sqlitedb.Backup
+				if strings.HasPrefix(testCase, "online_") {
+					exec("PRAGMA journal_mode=WAL")
+					backupFn = sqlitedb.BackupOnline
+				}
 				if err := db.Close(); err != nil {
 					t.Fatal(err)
 				}
 				backup := filepath.Join(t.TempDir(), "backup")
-				if err := sqlitedb.Backup(t.Context(), c.SQLitePath, backup); err != nil {
+				if err := backupFn(t.Context(), c.SQLitePath, backup); err != nil {
 					t.Fatal(err)
 				}
 				c.SQLitePath = filepath.Join(t.TempDir(), "restored.db")

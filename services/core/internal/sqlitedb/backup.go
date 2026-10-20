@@ -167,6 +167,10 @@ func Backup(ctx context.Context, source, directory string) (err error) {
 		return
 	}
 	manifest := backupManifest{Format: 1, Schema: SchemaVersion, CreatedAt: time.Now().UTC(), SHA256: sum, Bytes: size}
+	return writeBackupManifest(directory, manifest)
+}
+
+func writeBackupManifest(directory string, manifest backupManifest) (err error) {
 	out, err := os.OpenFile(filepath.Join(directory, "manifest.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return
@@ -176,6 +180,54 @@ func Backup(ctx context.Context, source, directory string) (err error) {
 		return
 	}
 	return out.Sync()
+}
+
+// BackupOnline takes a consistent SQLite snapshot without blocking WAL writers.
+// Validation is performed on the snapshot, not on a separately observed source.
+func BackupOnline(ctx context.Context, source, directory string) (err error) {
+	if err = regularAbsolute(source); err != nil {
+		return
+	}
+	if !filepath.IsAbs(directory) {
+		return errors.New("absolute backup directory required")
+	}
+	db, err := connect(ctx, source, "rw")
+	if err != nil {
+		return
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+	var journal string
+	if err = db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journal); err != nil {
+		return
+	}
+	if journal != "wal" {
+		return errors.New("online backup requires WAL journal mode; configure it before starting writers")
+	}
+	if err = os.Mkdir(directory, 0700); err != nil {
+		return
+	}
+	staging, err := os.MkdirTemp(directory, ".snapshot-")
+	if err != nil {
+		return
+	}
+	file := filepath.Join(staging, "snapshot.sqlite")
+	defer func() {
+		if removeErr := os.Remove(file); removeErr != nil && !os.IsNotExist(removeErr) {
+			err = errors.Join(err, removeErr)
+		}
+		err = errors.Join(err, os.Remove(staging))
+	}()
+	if _, err = db.ExecContext(ctx, "VACUUM INTO ?", file); err != nil {
+		return fmt.Errorf("SQLite online snapshot: %w", err)
+	}
+	if err = validateBackupCopy(ctx, file); err != nil {
+		return
+	}
+	sum, size, err := copyBackup(ctx, file, filepath.Join(directory, "database.sqlite"))
+	if err != nil {
+		return
+	}
+	return writeBackupManifest(directory, backupManifest{Format: 1, Schema: SchemaVersion, CreatedAt: time.Now().UTC(), SHA256: sum, Bytes: size})
 }
 
 func validateBackupCopy(ctx context.Context, path string) (err error) {

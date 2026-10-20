@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,12 +82,31 @@ func TestMigrationOutputFailure(t *testing.T) {
 }
 
 func TestSQLiteBackupCommands(t *testing.T) {
+	for _, online := range []bool{false, true} {
+		t.Run(fmt.Sprint(online), func(t *testing.T) { testSQLiteBackupCommands(t, online) })
+	}
+}
+
+func testSQLiteBackupCommands(t *testing.T, online bool) {
 	root := t.TempDir()
 	source, backup, target := filepath.Join(root, "source.db"), filepath.Join(root, "backup"), filepath.Join(root, "restored.db")
 	if err := sqlitedb.Migrate(t.Context(), source); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"--sqlite-backup", source, backup}, {"--sqlite-restore", backup, target}} {
+	command := "--sqlite-backup"
+	if online {
+		command = "--sqlite-backup-online"
+		db, err := sqlitedb.Open(t.Context(), source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.ExecContext(t.Context(), "PRAGMA journal_mode=WAL")
+		err = errors.Join(err, db.Close())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{command, source, backup}, {"--sqlite-restore", backup, target}} {
 		var output bytes.Buffer
 		if err := execute(args, emptyEnvironment, &output); err != nil || !strings.Contains(output.String(), "verified") {
 			t.Fatalf("command failed: %v %s", err, output.String())

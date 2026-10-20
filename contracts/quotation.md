@@ -27,7 +27,7 @@
 
 [计算测试](../services/core/internal/quotation/quote_test.go) 覆盖七五折、八折边界、加权比例、极大金额、非法口径、版本修改、旧摘要拒绝、来源变化与对象篡改。计算测试只证明计算口径；数据库证据见下节，不代表真实业务端到端验收。
 
-下一切片完善审批通知与可读交付，随后按 M2 矩阵验收。
+审批通知、可读交付及正式文件库层的当前边界见下文。
 
 ## 保存初稿并受控改单
 
@@ -50,7 +50,7 @@
 4. 持久恢复：工具结果先保存，核价结果以同一任务 ID 保存为报价版本。报价保存失败时保留 tool_running；租约过期后读取原成功工具结果重新计算并保存，不重发工具请求。
 5. 推进审批：保存后立即进入既有挂起/交付流程。七五折等待审批，改单生成新版本并重审；恰好八折跳过这条折扣审批，只回传初稿。
 
-[合成贯穿测试](../services/core/internal/feishu/quote_chain_integration_test.go) 从验签消息入队开始，使用真实 PG、官方 MCP SDK HTTP 服务和本机 chat-completions 替身，验证一次模型选择、一次工具取数、核价、旧卡片拒绝、改单批准和一次新版本交付。额外覆盖八折边界、工具撤权、模型绕过与保存失败恢复。已提供可读内部文本初稿及 [审批卡片贯穿验证](../services/core/internal/feishu/approval_card_integration_test.go)；正式 PDF、用章和真实外部系统认证未完成。SDK 本机替身不证明真实飞书送达。
+[合成贯穿测试](../services/core/internal/feishu/quote_chain_integration_test.go) 从验签消息入队开始，使用真实 PG、官方 MCP SDK HTTP 服务和本机 chat-completions 替身，验证一次模型选择、一次工具取数、核价、旧卡片拒绝、改单批准和一次新版本交付。额外覆盖八折边界、工具撤权、模型绕过与保存失败恢复。已提供可读内部文本初稿及 [审批卡片贯穿验证](../services/core/internal/feishu/approval_card_integration_test.go)；正式 PDF 与合成用章库层见下文，真实外部系统认证未完成。SDK 本机替身不证明真实飞书送达。
 
 ## 交付可读初稿
 
@@ -58,7 +58,7 @@
 - 确定展示：Worker 在提交发送意图前生成纯文本初稿，列出版本、客户、产品/数量、分精度单价和合计、证据引用及版本摘要；不用模型改写金额。文本明确“非正式对外文件、未用章”，不将折扣标志当审批状态。
 - 受控下载：GET /api/ops/quotation?task_id=<UUID> 返回当前版本 UTF-8 .txt 附件；沿用指定审批人、task.approve 和读取审计。撤权或审计失败不返回正文；无匿名 URL、Cookie 或查询令牌。响应 no-store、nosniff，文件名仅含任务 UUID 和版本。
 - 限定接收：现有 Worker 仅回复已验证的原单聊；本功能不扩大为群聊/客户外发。下载是当前初稿视图，不是公开文档共享服务。
-- 保留范围：文本初稿已可读，尚无正式 PDF、签章、审批通知或渠道卡片；这些能力不通过文案暗示已实现。
+- 保留范围：此下载入口仅返回文本初稿；审批卡片链路、正式 PDF 与用章库层分别见对应章节，不自动接入此入口或真实外发。
 
 证据：[文本精度与篡改测试](../services/core/internal/quotation/render_test.go)、[下载权限与读取审计测试](../services/core/internal/feishu/quotation_integration_test.go)；贯穿测试核对修改后的可读总额和版本。
 

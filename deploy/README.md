@@ -3,7 +3,7 @@
 - 执行：根目录 `pnpm build`，先构建 Vite，再嵌入 Go；同时构建 Python wheel/sdist。
 - 启动：根目录 `pnpm start`；默认仅监听 `127.0.0.1:8080`，通过 `AGENTOS_HTTP_ADDR` 显式配置地址。
 - 区分：`/api/health` 仅表示进程存活；默认未启用渠道时 `/api/ready` 返回 503；配置渠道后的数据库就绪与权限边界见[飞书部署](feishu.md)。
-- 限定：提供开发制品及 [Windows SQLite 核心离线包](offline/README.md)；生产容器、服务注册及完整 Python/PG 离线包尚未认证。
+- 限定：提供开发制品及 [Windows/Linux amd64 SQLite 核心离线包](offline/README.md)；[Windows 服务脚本](windows/README.md)仅经替身测试，真实服务安装、生产容器及完整 Python/PG 离线包尚未认证。
 
 ## 离线识别制品
 

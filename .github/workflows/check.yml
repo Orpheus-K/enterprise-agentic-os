@@ -27,6 +27,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm package:offline "$env:RUNNER_TEMP/agentos-offline"
       - run: pnpm test:offline "$env:RUNNER_TEMP/agentos-offline"
+      - run: pwsh -NoProfile -File deploy/windows/Service.Tests.ps1
   foundation:
     runs-on: ubuntu-latest
     timeout-minutes: 20

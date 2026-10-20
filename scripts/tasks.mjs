@@ -118,6 +118,9 @@ switch (task) {
     pnpm("typecheck");
     pnpm("test");
     run(process.execPath, ["--test", "scripts/offline-sbom.test.mjs"]);
+    run(process.execPath, ["--test", "scripts/diagnostics.test.mjs"]);
+    if (process.platform === "win32")
+      run("pwsh", ["-NoProfile", "-File", "deploy/windows/Service.Tests.ps1"]);
     stageWeb();
     checkGo();
     checkPython();

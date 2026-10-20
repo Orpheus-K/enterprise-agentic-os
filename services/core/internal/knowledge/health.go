@@ -27,12 +27,25 @@ func (s *Store) UpdateHealth(ctx context.Context, actor identity.ExternalIdentit
 	if in.SourceID == uuid.Nil || in.Revision < 1 || (in.State != "healthy" && in.State != "unavailable") || in.ValidUntil.IsZero() {
 		return SourceHealth{}, ErrInvalid
 	}
+	var out SourceHealth
+	err := s.within(ctx, actor, func(q database.Queries) error {
+		var err error
+		out, err = s.updateHealth(ctx, q, in)
+		return err
+	})
+	if err != nil {
+		return SourceHealth{}, err
+	}
+	return out, err
+}
+
+func (s *Store) updateHealth(ctx context.Context, q database.Queries, in HealthUpdate) (SourceHealth, error) {
 	hash, err := digest(in)
 	if err != nil {
 		return SourceHealth{}, err
 	}
 	out := SourceHealth{SourceID: in.SourceID}
-	err = s.within(ctx, actor, func(q database.Queries) error {
+	err = func() error {
 		if err := s.syncAllowed(ctx, q, in.SourceID); err != nil {
 			return err
 		}
@@ -72,7 +85,7 @@ func (s *Store) UpdateHealth(ctx context.Context, actor identity.ExternalIdentit
 			return err
 		}
 		return s.audit(ctx, q, in.SourceID, "", "source_health", in.Revision)
-	})
+	}()
 	if err != nil {
 		return SourceHealth{}, err
 	}

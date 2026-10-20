@@ -2,8 +2,48 @@
 
 ## 定位当前里程碑
 
-- 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，本机验证）。M3 整体尚未退出。
-- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④原生来源连接器待实现 ⑤会话检索本机验证完成，远端 CI 待确认 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+- 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
+- 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 范围待决策 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
+
+## 当前切片：飞书 docx 读取器（2026-10-20）
+
+- 实现：R02/R10/R12、A06/A08、T08/T09、V07/V08 的来源读取边界；`internal/feishudocs` 显式绑定用户凭证，固定版本分页，前后重验身份与权限，拒绝坏游标、不完整块树和超限。只返回完整原始快照，不发布 ACL；单点契约见 [飞书文档](../contracts/feishu-docs.md)。
+- 判断：原生权限检查针对当前 token；应用可读或协作者列表不能直接成为员工 ACL。AppID 为可信配置绑定，userinfo 核对 OpenID/TenantKey。未知块保留原始对象，后续解析须显式支持或拒绝。
+- 本机证据：`pnpm check` 退出 0，含读取器合成 HTTP 测试，日志 `.tools/m3-feishu-docs-reader-check.log`。无 SQL/数据库变更，本片未重复运行 test:db；未真实租户联调，Windows 无 gcc，Linux race 待本片远端 CI。
+- 后续规范化：已实现页面/段落/标题/列表/待办的 text_run 及未合并矩形表 → knowledge.Content，按源树排序、保留源块 ID、绑定版本锚点；合并/嵌套表、图片/提及/链接/删除线等暂拒绝整份文档，不截断或丢弃后伪成功。限制与未支持类型以契约为准。
+- 规范化证据：`pnpm check:go` 退出 0（`.tools/m3-feishu-normalize-check.log`）；补充 256 切片边界、空块与样式片段后，`go test -count=1 ./internal/feishudocs` 通过（`.tools/m3-feishu-normalize-tests.log`）。覆盖分页乱序、中文正文、版本锚点、未知内容、缺块和超限；无 SQL 变更，未重复数据库测试。
+- 列表切片：保留显式编号、连续同级 auto 编号和待办完成状态；为子块加入父列表上下文，避免丢失否定/条件。缺编号、缺状态、溢出及上下文超限拒绝。`pnpm check:go` 通过（`.tools/m3-feishu-lists-check.log`），含嵌套语义、编号中断/重启及拒绝部分发布测试；无 SQL 变更，未重复数据库测试。
+- 远端与评审：6b3960b CI 39391058510、2e8457a CI 39392608108/39392460431、2cb23d6 CI 39393729434/39393721936、010ca72 CI 39394609097/39394603097 均 success。草稿 [PR #2](https://github.com/Orpheus-K/enterprise-agentic-os/pull/2) 依赖 #1。
+- 表格切片：校验行列、cells/children 顺序、明确单位合并跨度；整表为一个 JSON 正文切片，保留表头标记、空单元格、转义字符及父级条件，不单独发布单元格。`pnpm check:go` 通过（`.tools/m3-feishu-tables-check.log`），覆盖价格表关系、缺合并信息/错误几何拒绝、类型错配和序列化后超限；无 SQL 变更，未重复数据库测试。本片远端尚未确认。
+- 身份切片：MappedReader 固定安装 TenantID/AppID/TenantKey，使用现有飞书渠道键解析当前 IAM 成员；远端操作前后复核，停用、撤链、改绑及基础设施失败均不返回快照。Access 只是核验记录，不代替发布事务授权。
+- 身份证据：`pnpm check:go` 通过（`.tools/m3-feishu-mapping-check.log`）；真实 PG `go test -tags=integration -count=1 -run '^TestMappedReaderWithPostgresIdentity$' -v ./internal/feishudocs` 通过（`.tools/m3-feishu-mapping-db.log`）。初次夹具因重复 employee_id 失败，修正合成员工编号后通过。测试库/角色残留 0，17/agentos-m3 已停止；本片远端待确认。无 SQL/迁移修改，未重跑全量 test:db。
+- 身份远端：299467f CI 39395915886/39395910986 均 success。
+- 发布事务切片：Store.Publish 将同版本内容、单空间向量、ACL 和审计原子提交；复用现有写入规则，末尾重验同步权限、健康和授权期限。错误回滚并保留旧版本，重试幂等；仍未实现持久同步任务。契约单点见 [知识契约](../contracts/knowledge.md#原子发布已准备的快照)。
+- 发布证据：`pnpm check:go`、全量 `pnpm test:db` 均退出 0（`.tools/m3-publication-check.log`、`.tools/m3-publication-full-db.log`）。真实 PG 故障覆盖向量缺项、ACL 冲突、过期、错误世代和末步审计失败；另验重复请求和新版本替换。初次抽取函数的 err 作用域导致编译失败，修正后通过。本片远端待确认。
+- 发布远端：f4edd06 CI 39397429247/39397424216 均 success。
+- 同步任务切片（schema 20）：新增强制 RLS 的 sync_jobs；持久调度版本/配置摘要、领取世代/Token、过期接管；PublishSync 把三通道发布、任务完成与审计放在同一事务，末尾租约过期或完成审计故障均回滚。相同完成请求可核对未知提交，不接受旧世代/旧配置或不同内容。尚无后台 Worker、原生游标或 Embedding 意图检查点。契约见 [同步围栏](../contracts/knowledge.md#持久同步任务与发布围栏)。
+- 同步任务证据：`pnpm check` 通过（`.tools/m3-sync-jobs-check.log`）；定向真实 PG 恢复/并发/围栏用例通过（`m3-sync-jobs-targeted.log`）。全量 `pnpm test:db` 仅知识模块旧 RLS 表数量断言失败（9→实际10，其余模块通过，`m3-sync-jobs-full-db.log`）；按新迁移更新断言后重跑全部知识模块 integration 测试通过（`m3-sync-jobs-knowledge-db.log`），未再次重跑无关模块。测试库/角色残留 0，17/agentos-m3 已停止。新迁移尚待远端 CI；历史 schema-18 备份演练不覆盖 schema 20。
+- 同步任务远端：6d3755b PR CI 39399262983 completed/success。
+- Embedding 检查点（schema 21）：BeginSyncEmbedding 先保存整批意图与内容/空间；SaveSyncEmbedding 验完整切片集并原子保存向量/审计。未知 pending 不允许过期接管或新请求覆盖；完整结果可接管复用，PublishSync 校验内容/向量一致，ACL 必须重新核验。尚无人工核对入口或后台 Worker，不能视为运行时同步已完成。
+- 检查点证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-sync-embedding-check.log`、`m3-sync-embedding-full-db.log`）；定向 `TestSync*` 通过（`m3-sync-embedding-targeted.log`）。覆盖未知不重放、迟到拒绝、部分向量拒绝、审计故障回滚、幂等保存及恢复发布。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认；备份演练仍未覆盖 schema 21。
+- 检查点远端：ed1be1c PR CI 39400702524 completed/success。
+- 受控核对（schema 22）：新增 knowledge.reconcile 显式授权和不可变 sync_reconciliations 账本；HTTP `/api/ops/knowledge/sync/reconcile` 支持带证据摘要的 not_sent/completed，后者须完整匹配向量。只处理过期 pending，任务锁后重验 IAM/来源/能力；原子增加世代、写结果/核对/审计，幂等重试仍验权限。当前没有核对 UI 或供应商结果查询。
+- 核对证据：`pnpm check`、全量 `pnpm test:db` 通过（`.tools/m3-sync-reconcile-check.log`、`m3-sync-reconcile-full-db.log`）；随后加强账本写入者 RLS 约束，重跑两种 HTTP＋PG 核对用例通过（`m3-sync-reconcile-final.log`）。覆盖活跃租约拒绝、缺能力/证据、错误世代、审计回滚、幂等、旧执行者及能力撤销。测试库/角色残留 0，17/agentos-m3 已停止。本片远端待确认。
+- 核对远端：50f910c CI 39402156375/39402147117 均 success。
+- 发布身份复核：发现读取前后的 IAM 核验不足以覆盖发布锁等待；新增 PublishSyncForMembers，要求同步者和完整 ACL allow 成员证明，任务/文档锁后及发布后重验当前映射，恢复同步者上下文后写审计。不得将此校验视为原生文档权限证明。
+- 复核证据：`pnpm check:go` 与知识模块全部真实 PG integration 测试通过（`.tools/m3-sync-members-check.log`、`m3-sync-members-db.log`）；定向测试覆盖缺员、改绑、撤销、写入中撤销及文档锁等待期间撤销（`m3-sync-members-targeted.log`）。初版测试在持锁连接中观察 pg_stat_activity 超时，改独立观察连接后通过。无 schema 变化，未重跑其他模块数据库测试；测试残留 0，集群已停止。本片远端待确认。
+- 复核远端：e8b4915 CI 39403158224/39403152439 均 success。
+- 单次执行器：Syncer.RunOnce 已串联持久领取、用户凭证读取、规范化、Embedding 意图/结果、最终原文重读、逐成员有效权限核验、来源健康及 PublishSyncForMembers。配置摘要绑定来源/身份/模型空间；一分钟证明窗、五分钟租约；失败尝试标记来源 unavailable，错误不吞。ReportSyncHealth 在来源锁下分配健康版本，防止文档请求版本混用。
+- 检查点复用：较新请求同配置保留完整结果，原文不变不重新嵌入；原文变化才允许清除已知结果并重新写意图，未知 pending 不受影响。已有结果恢复仍重新取当前身份/权限，不能复用 ACL。
+- 执行器证据：初版 `pnpm check`、全量 `pnpm test:db` 通过（`.tools/m3-native-sync-check.log`、`m3-native-sync-full-db.log`）；补同内容复用/新版本重算后，`pnpm check:go` 及飞书来源、知识模块全部 PG integration 测试通过（`m3-native-sync-final-check.log`、`m3-native-sync-final-db.log`）。合成原生协议＋真实 Embedder HTTP＋真实 PG 覆盖首次发布、原生拒绝、Embedding 后撤权、未知不重放、已知结果接管和阻断旧证据。测试残留 0，集群已停止；本片远端待确认，未真实租户联调。
+- 执行器远端：a5f6419 CI 39404561944/39404556077 均 completed/success。
+- 启动轮询切片：R02/R10/R12、A06/A08、T08/T09、V07/V08；可选 sources 固定来源、文档集合、用户凭证环境变量和模型空间。启动先验凭证、IAM/来源及空间，不创建任务或访问供应商；Run 启动受取消控制的轮询。PollSync 在数据库分配请求版本，保留活跃/过期同配置任务与未知 Embedding；文档集合纳入配置摘要，配置变更拒绝覆盖活跃租约或未知调用。部署要求先停止旧配置实例。
+- 轮询证据：`pnpm check`、全量 `pnpm test:db` 均退出 0（`.tools/m3-source-bootstrap-check.log`、`m3-source-bootstrap-full-db.log`）；定向配置/启动/轮询 PG 测试通过（`m3-source-bootstrap-targeted.log`），覆盖缺凭证、禁用来源/空间、取消启动无调度、重复轮询及未知结果保护。schema 仍为 22；测试库/角色残留 0，测试集群已停止。本片远端待确认；未真实租户联调，未验证实际供应商持续运行。
+- 同步查询切片：R10/R12/R15、A06/A08、T08/T09、V07/V08；POST `/api/ops/knowledge/sync/inspect` 按当前来源同步权限＋knowledge.reconcile 授权返回指定任务的请求/世代/配置、租约有效性、Embedding 状态及输入摘要/空间/版本/切片 ID。不返回正文、向量或租约 Token，不把过期视作未发送证据；无迁移，schema 22。
+- 查询证据：`pnpm check:go` 通过（`.tools/m3-sync-inspect-check.log`）；知识模块全部 integration 通过（`m3-sync-inspect-db.log`）。同轮运维测试仅新增禁用来源夹具误用 source_id 列失败，改实际 id 后全部运维 integration 通过（`m3-sync-inspect-ops-final.log`）。覆盖活跃/过期意图、核对后两种状态、缺授权/撤权/禁用来源、不可访问来源/缺任务和输出脱敏。测试库/角色残留 0，测试集群已停止。未变更其他模块或 schema，未重跑全量 test:db；本片远端待确认。
+- 贯通验证：T08/T09、V07/V08；扩展 TestNativeSyncPipeline，将真实同步发布接入会话查询嵌入、模型上下文、持久引用及发送。新增模型后原生收件人撤权/读取失败并再次同步，确认派生回答不发送、任务 failed 且不重放；已知向量接管后正常交付亦通过。只改测试/文档，无生产实现或 schema 变动。
+- 贯通证据：`go test -tags=integration -count=1 -run '^TestNativeSyncPipeline$' -v ./internal/feishudocs` 全部 7 场景通过（`.tools/m3-source-conversation-targeted.log`）。原生/模型/发送为替身，PG 为真实实例，不代替真实租户联调或权限传播时延验收；本片未重跑无关模块。测试库/角色残留 0，集群已停止。
+- 下一片：核查真实租户授权与 Token 更新生命周期及 M3 剩余差距，按实际需求继续开发；当前仅环境变量载入用户 Token，尚无 OAuth 获取/自动刷新。SQLite 范围仍待决策，M3 不据此退出。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 
@@ -11,7 +51,7 @@
 - 守住交付：模型前续租、工具/发送意图在任务锁后用同一事务重验当前身份及全部引用；审批查看、决定、改单和通知另验审批人的知识权限。未知嵌入不自动重放；审计/数据库错误显式失败，不当作无资料。群聊仍由渠道拒绝。
 - 证据：最终生产代码 `pnpm check`、`pnpm test:db` 均退出 0（`.tools/m3-retrieval-runtime-final-check.log`、`m3-retrieval-runtime-final-db.log`）；启动/配置/撤权/恢复/审批/工具定向日志 `m3-retrieval-runtime-targeted.log`。后补报价贯穿用例 `go test -tags=integration -count=1 -run '^TestQuoteMessageToolApprovalAmendDelivery/retrieval' -v ./internal/feishu` 通过（`m3-retrieval-quote.log`），覆盖来源进入工具报价、改单后批准交付及撤权拒绝改单。均为合成来源、模型/MCP/发送替身。
 - 保留反例：续租锁等待期间撤权的测试先失败（旧代码返回 nil），补锁后重验后通过；日志 `m3-retrieval-renew-before.log`、`m3-retrieval-renew-after.log`。最终全量在该生产修复后执行。
-- 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；Windows 无 gcc，Linux race 需远端 CI。工作分支 `codex/m3-conversation-retrieval`，本片远端结果尚未确认。
+- 清理与远端：测试库/角色残留 0，WSL `17/agentos-m3` 已停止；a72d34a 的 [PR CI 39388783955](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388783955) 与 [push CI 39388741561](https://github.com/Orpheus-K/enterprise-agentic-os/actions/runs/39388741561) 均 completed/success。工作分支 `codex/m3-conversation-retrieval`，草稿 PR #1。
 - 下一片：核实飞书云文档权限语义、版本/游标恢复及撤回信号，完成受控来源连接器与向量发布；不得以应用 Token 可读推导全员 ACL。真实租户/模型联调、中文召回质量、群聊接收范围及 M3 其余退出项仍待独立验收；SQLite 未启动重写。
 
 ## SQLite 差距清单（未实现，需决策）
@@ -104,4 +144,4 @@
 - 私有依赖：.tools/pg-test-admin.url、DPAPI 凭证与现场配置全部忽略，禁止回显；公开源码特征扫描 191 个文件无凭证候选。
 - 本机 Go：GO_BINARY=$PWD/.tools/go/bin/go.exe；GOTMPDIR=$PWD/.tools/go-tmp，不改全局设置。Windows 无 gcc，race 由上述 Linux CI 证明。
 - 独立 PG：.tools/pgdata-m1，127.0.0.1:55439；测试自行建库建角色并清理。升级先停旧实例、备份并显式迁移，已发布迁移不可重写。
-- 当前工作树制品要求 schema 19；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。
+- 当前工作树制品要求 schema 22；已发布迁移保持不变，pgvector 为必需前置。M2 CI 为历史已验收制品证据，不能代替当前 M3 远端验证。

@@ -80,40 +80,51 @@ func (s *Store) PutContent(ctx context.Context, actor identity.ExternalIdentity,
 	if err := c.validate(); err != nil {
 		return err
 	}
+	return s.within(ctx, actor, func(q database.Queries) error { return s.putContent(ctx, q, c) })
+}
+func (s *Store) putContent(ctx context.Context, q database.Queries, c Content) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
 	hash, err := digest(c)
 	if err != nil {
 		return err
 	}
-	return s.within(ctx, actor, func(q database.Queries) error {
-		if err := s.lock(ctx, q, c.SourceID, c.DocumentID); err != nil {
+	if err := s.lock(ctx, q, c.SourceID, c.DocumentID); err != nil {
+		return err
+	}
+	var revision int64
+	var old string
+	if err := q.QueryRow(ctx, `SELECT content_revision,content_hash FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID).Scan(&revision, &old); err != nil {
+		return err
+	}
+	if c.Revision <= revision {
+		if c.Revision == revision && hash == old {
+			return nil
+		}
+		return ErrConflict
+	}
+	if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET content_revision=$5,content_hash=$6,title=$7,deleted=$8 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID, c.Revision, hash, c.Title, c.Deleted); err != nil {
+		return err
+	}
+	if _, err := q.Exec(ctx, `DELETE FROM knowledge.chunks WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID); err != nil {
+		return err
+	}
+	for _, chunk := range c.Chunks {
+		if _, err := q.Exec(ctx, `INSERT INTO knowledge.chunks VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, s.tenant, s.app, c.SourceID, c.DocumentID, chunk.ID, c.Revision, chunk.Body, chunk.Anchor); err != nil {
 			return err
 		}
-		var revision int64
-		var old string
-		if err := q.QueryRow(ctx, `SELECT content_revision,content_hash FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID).Scan(&revision, &old); err != nil {
-			return err
-		}
-		if c.Revision <= revision {
-			if c.Revision == revision && hash == old {
-				return nil
-			}
-			return ErrConflict
-		}
-		if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET content_revision=$5,content_hash=$6,title=$7,deleted=$8 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID, c.Revision, hash, c.Title, c.Deleted); err != nil {
-			return err
-		}
-		if _, err := q.Exec(ctx, `DELETE FROM knowledge.chunks WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4`, s.tenant, s.app, c.SourceID, c.DocumentID); err != nil {
-			return err
-		}
-		for _, chunk := range c.Chunks {
-			if _, err := q.Exec(ctx, `INSERT INTO knowledge.chunks VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, s.tenant, s.app, c.SourceID, c.DocumentID, chunk.ID, c.Revision, chunk.Body, chunk.Anchor); err != nil {
-				return err
-			}
-		}
-		return s.audit(ctx, q, c.SourceID, c.DocumentID, "content", c.Revision)
-	})
+	}
+	return s.audit(ctx, q, c.SourceID, c.DocumentID, "content", c.Revision)
 }
+
 func (s *Store) PutACL(ctx context.Context, actor identity.ExternalIdentity, a ACL) error {
+	if err := a.validate(); err != nil {
+		return err
+	}
+	return s.within(ctx, actor, func(q database.Queries) error { return s.putACL(ctx, q, a) })
+}
+func (s *Store) putACL(ctx context.Context, q database.Queries, a ACL) error {
 	if err := a.validate(); err != nil {
 		return err
 	}
@@ -134,40 +145,38 @@ func (s *Store) PutACL(ctx context.Context, actor identity.ExternalIdentity, a A
 	if err != nil {
 		return err
 	}
-	return s.within(ctx, actor, func(q database.Queries) error {
-		if err := s.lock(ctx, q, a.SourceID, a.DocumentID); err != nil {
-			return err
+	if err := s.lock(ctx, q, a.SourceID, a.DocumentID); err != nil {
+		return err
+	}
+	var ready bool
+	if err := q.QueryRow(ctx, "SELECT knowledge.source_ready($1,$2)", a.SourceID, a.SourceEpoch).Scan(&ready); err != nil {
+		return err
+	}
+	if !ready {
+		return ErrUnavailable
+	}
+	var revision int64
+	var old string
+	if err := q.QueryRow(ctx, `SELECT acl_revision,acl_hash FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID).Scan(&revision, &old); err != nil {
+		return err
+	}
+	if a.Revision <= revision {
+		if a.Revision == revision && hash == old {
+			return nil
 		}
-		var ready bool
-		if err := q.QueryRow(ctx, "SELECT knowledge.source_ready($1,$2)", a.SourceID, a.SourceEpoch).Scan(&ready); err != nil {
-			return err
-		}
-		if !ready {
-			return ErrUnavailable
-		}
-		var revision int64
-		var old string
-		if err := q.QueryRow(ctx, `SELECT acl_revision,acl_hash FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID).Scan(&revision, &old); err != nil {
-			return err
-		}
-		if a.Revision <= revision {
-			if a.Revision == revision && hash == old {
-				return nil
-			}
-			return ErrConflict
-		}
-		allow, deny := a.Allow, a.Deny
-		if allow == nil {
-			allow = []uuid.UUID{}
-		}
-		if deny == nil {
-			deny = []uuid.UUID{}
-		}
-		if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET acl_revision=$5,acl_hash=$6,acl_content_revision=$7,allow_members=$8,deny_members=$9,chunk_acl=$10,valid_until=$11,source_epoch=$12 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID, a.Revision, hash, a.ContentRevision, allow, deny, raw, a.ValidUntil, a.SourceEpoch); err != nil {
-			return err
-		}
-		return s.audit(ctx, q, a.SourceID, a.DocumentID, "acl", a.Revision)
-	})
+		return ErrConflict
+	}
+	allow, deny := a.Allow, a.Deny
+	if allow == nil {
+		allow = []uuid.UUID{}
+	}
+	if deny == nil {
+		deny = []uuid.UUID{}
+	}
+	if _, err := q.Exec(ctx, `UPDATE knowledge.documents SET acl_revision=$5,acl_hash=$6,acl_content_revision=$7,allow_members=$8,deny_members=$9,chunk_acl=$10,valid_until=$11,source_epoch=$12 WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4`, s.tenant, s.app, a.SourceID, a.DocumentID, a.Revision, hash, a.ContentRevision, allow, deny, raw, a.ValidUntil, a.SourceEpoch); err != nil {
+		return err
+	}
+	return s.audit(ctx, q, a.SourceID, a.DocumentID, "acl", a.Revision)
 }
 
 // visibleChunk is the single member read predicate for chunk c of document d. It is

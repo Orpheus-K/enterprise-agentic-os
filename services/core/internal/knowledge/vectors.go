@@ -134,70 +134,74 @@ func (s *Store) PublishVectors(ctx context.Context, actor identity.ExternalIdent
 	if err := in.validate(); err != nil {
 		return err
 	}
+	return s.within(ctx, actor, func(q database.Queries) error { return s.publishVectors(ctx, q, in) })
+}
+func (s *Store) publishVectors(ctx context.Context, q database.Queries, in VectorSet) error {
+	if err := in.validate(); err != nil {
+		return err
+	}
 	hash, err := digest(in)
 	if err != nil {
 		return err
 	}
-	return s.within(ctx, actor, func(q database.Queries) error {
-		if err := s.syncAllowed(ctx, q, in.SourceID); err != nil {
+	if err := s.syncAllowed(ctx, q, in.SourceID); err != nil {
+		return err
+	}
+	var revision int64
+	var deleted bool
+	err = q.QueryRow(ctx, `SELECT content_revision,deleted FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4 FOR UPDATE`, s.tenant, s.app, in.SourceID, in.DocumentID).Scan(&revision, &deleted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	// Recheck after the lock wait: the sync identity may have been revoked meanwhile.
+	if err := s.syncAllowed(ctx, q, in.SourceID); err != nil {
+		return err
+	}
+	if deleted || revision != in.ContentRevision {
+		return ErrConflict
+	}
+	if err := s.space(ctx, q, in.Space, len(in.Vectors[0].Embedding)); err != nil {
+		return err
+	}
+	var published int64
+	var old string
+	err = q.QueryRow(ctx, `SELECT content_revision,request_hash FROM knowledge.vector_sets WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND space_id=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID).Scan(&published, &old)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		return err
+	case published == in.ContentRevision && old == hash:
+		return nil
+	case published == in.ContentRevision:
+		return ErrConflict
+	}
+	var chunks []string
+	if err := q.QueryRow(ctx, `SELECT coalesce(array_agg(id ORDER BY id),'{}') FROM knowledge.chunks WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND content_revision=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ContentRevision).Scan(&chunks); err != nil {
+		return err
+	}
+	given := make([]string, len(in.Vectors))
+	for i, v := range in.Vectors {
+		given[i] = v.ChunkID
+	}
+	slices.Sort(given)
+	if !slices.Equal(chunks, given) {
+		return ErrInvalid
+	}
+	if _, err := q.Exec(ctx, `DELETE FROM knowledge.chunk_vectors WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND space_id=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID); err != nil {
+		return err
+	}
+	if _, err := q.Exec(ctx, `INSERT INTO knowledge.vector_sets VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,app_id,source_id,document_id,space_id) DO UPDATE SET content_revision=EXCLUDED.content_revision,request_hash=EXCLUDED.request_hash`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID, in.ContentRevision, hash); err != nil {
+		return err
+	}
+	for _, v := range in.Vectors {
+		if _, err := q.Exec(ctx, `INSERT INTO knowledge.chunk_vectors VALUES($1,$2,$3,$4,$5,$6,$7,$8,CAST($9::text AS public.vector))`, s.tenant, s.app, in.SourceID, in.DocumentID, v.ChunkID, in.ID, len(v.Embedding), in.ContentRevision, literal(v.Embedding)); err != nil {
 			return err
 		}
-		var revision int64
-		var deleted bool
-		err := q.QueryRow(ctx, `SELECT content_revision,deleted FROM knowledge.documents WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND id=$4 FOR UPDATE`, s.tenant, s.app, in.SourceID, in.DocumentID).Scan(&revision, &deleted)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrConflict
-		}
-		if err != nil {
-			return err
-		}
-		// Recheck after the lock wait: the sync identity may have been revoked meanwhile.
-		if err := s.syncAllowed(ctx, q, in.SourceID); err != nil {
-			return err
-		}
-		if deleted || revision != in.ContentRevision {
-			return ErrConflict
-		}
-		if err := s.space(ctx, q, in.Space, len(in.Vectors[0].Embedding)); err != nil {
-			return err
-		}
-		var published int64
-		var old string
-		err = q.QueryRow(ctx, `SELECT content_revision,request_hash FROM knowledge.vector_sets WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND space_id=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID).Scan(&published, &old)
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-		case err != nil:
-			return err
-		case published == in.ContentRevision && old == hash:
-			return nil
-		case published == in.ContentRevision:
-			return ErrConflict
-		}
-		var chunks []string
-		if err := q.QueryRow(ctx, `SELECT coalesce(array_agg(id ORDER BY id),'{}') FROM knowledge.chunks WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND content_revision=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ContentRevision).Scan(&chunks); err != nil {
-			return err
-		}
-		given := make([]string, len(in.Vectors))
-		for i, v := range in.Vectors {
-			given[i] = v.ChunkID
-		}
-		slices.Sort(given)
-		if !slices.Equal(chunks, given) {
-			return ErrInvalid
-		}
-		if _, err := q.Exec(ctx, `DELETE FROM knowledge.chunk_vectors WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3 AND document_id=$4 AND space_id=$5`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID); err != nil {
-			return err
-		}
-		if _, err := q.Exec(ctx, `INSERT INTO knowledge.vector_sets VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,app_id,source_id,document_id,space_id) DO UPDATE SET content_revision=EXCLUDED.content_revision,request_hash=EXCLUDED.request_hash`, s.tenant, s.app, in.SourceID, in.DocumentID, in.ID, in.ContentRevision, hash); err != nil {
-			return err
-		}
-		for _, v := range in.Vectors {
-			if _, err := q.Exec(ctx, `INSERT INTO knowledge.chunk_vectors VALUES($1,$2,$3,$4,$5,$6,$7,$8,CAST($9::text AS public.vector))`, s.tenant, s.app, in.SourceID, in.DocumentID, v.ChunkID, in.ID, len(v.Embedding), in.ContentRevision, literal(v.Embedding)); err != nil {
-				return err
-			}
-		}
-		return s.audit(ctx, q, in.SourceID, in.DocumentID, "vectors", in.ContentRevision)
-	})
+	}
+	return s.audit(ctx, q, in.SourceID, in.DocumentID, "vectors", in.ContentRevision)
 }
 
 // Search ranks by exact cosine distance after authorization inside the same query, so

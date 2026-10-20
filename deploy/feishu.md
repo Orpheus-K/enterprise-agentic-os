@@ -85,3 +85,23 @@
 审批通知：可在 approval 中设置 notify_subject，为当前安装下映射到指定审批成员的飞书 OpenID。通知使用机器人已有发送权限，发送绑定版本的审批初稿卡片；没有有效身份映射或 task.approve 则取消。升级至 schema 16 及以上后按 [通知契约](../contracts/approval-notices.md) 验证，不向旧任务追溯补发。
 
 审批回调：在飞书应用订阅 card.action.trigger；使用已配置的可信长连接或加密验签 Webhook。审批成员须在当前安装 issuer 下具有有效飞书身份映射及 task.approve。发布与平台现场交互需单独验证；本机合成测试不证明真实送达。
+## 云文档来源轮询
+
+在已有渠道配置中可选增加 sources，并配置匹配的 embedding 与 operations。先由管理员预置 IAM、knowledge.sources 的同步成员和 enabled，以及 embedding_spaces；启动检查不会代建或授权。以下为配置片段，UUID 与环境变量值须替换为实际安装信息：
+
+```json
+{
+  "sources": [{
+    "source_id": "11111111-1111-4111-8111-111111111111",
+    "documents": ["doxcDocumentID"],
+    "owner": {"open_id": "ou_sync", "access_token_env": "FEISHU_SOURCE_USER_TOKEN"},
+    "recipients": [{"open_id": "ou_employee", "access_token_env": "FEISHU_EMPLOYEE_USER_TOKEN"}],
+    "space": {"space_id": "22222222-2222-4222-8222-222222222222", "model": "approved-embedding", "model_revision": "v1"},
+    "poll_seconds": 10
+  }]
+}
+```
+
+Token 必须是各绑定用户自己的 user access token；目前不自动获取/刷新，过期使来源不可用，需要轮换环境变量并重启。候选收件人不是授权名单，执行器逐个验证原生有效权限。配置变更先停旧实例；未知调用须经受控核对，不能通过改配置或清表绕过。轮询与证明有效期、类型限制及失败语义以 [来源契约](../contracts/feishu-docs.md) 为准。
+
+同步任务查询：向 `/api/ops/knowledge/sync/inspect` POST `{"source_id":"配置中的来源 UUID","document_id":"配置中的原生文档 ID"}`，使用既有运维 Bearer。运维绑定成员须具有该来源同步权限及 `knowledge.reconcile` 授权。读取返回的 request_revision、generation、config_hash 与输入摘要，结合供应商证据再调用核对入口；pending 或租约过期本身不能作为 not_sent 的证据。接口契约见[同步任务查询](../contracts/knowledge.md#同步任务查询)。

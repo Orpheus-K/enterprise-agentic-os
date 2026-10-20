@@ -39,6 +39,7 @@ type Config struct {
 	Embedding            *model.EmbeddingConfig        `json:"embedding,omitempty"`
 	Retrieval            *conversation.RetrievalPolicy `json:"retrieval,omitempty"`
 	Operations           *OperationsConfig             `json:"operations,omitempty"`
+	Sources              []SourceConfig                `json:"sources,omitempty"`
 }
 type OperationsConfig struct {
 	TokenEnv string `json:"token_env"`
@@ -102,6 +103,9 @@ func Parse(raw []byte) (Config, error) {
 	if c.Tools != nil && c.Skills == nil {
 		return c, errors.New("tools require configured skills")
 	}
+	if err := c.validateSources(); err != nil {
+		return c, err
+	}
 	if c.Skills != nil {
 		if err := c.Skills.Validate(); err != nil {
 			return c, err
@@ -131,6 +135,7 @@ type Channel struct {
 	Operations      http.Handler
 	Readiness       *health.Readiness
 	telemetry       *telemetry.Telemetry
+	sources         []sourceRunner
 }
 
 func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, error) {
@@ -172,6 +177,10 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		return nil, err
 	}
 	embedder, err := openEmbedder(c.Embedding)
+	if err != nil {
+		return nil, err
+	}
+	preparedSources, err := c.sourceCredentials()
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +260,10 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	}
 	adapter = adapter.WithApprovals(store)
 	channel := &Channel{db: db, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
+	channel.sources, err = c.openSources(ctx, db, preparedSources)
+	if err != nil {
+		return nil, err
+	}
 	sender := feishu.NewSender(c.Binding.AppID, appSecret, logger)
 	channel.worker = &conversation.Worker{Notifier: sender, Store: store, Tools: gateway, Model: modelClient, Sender: sender, Logger: logger, Telemetry: tel}
 	if c.Mode == "webhook" {
@@ -291,6 +304,9 @@ func (c *Channel) Run(ctx context.Context) error {
 		c.Readiness.SetTransport(health.Listening)
 	}
 	group, ctx := errgroup.WithContext(ctx)
+	for _, runner := range c.sources {
+		group.Go(func() error { return c.runSource(ctx, runner) })
+	}
 	group.Go(func() error {
 		c.Readiness.SetWorker(true)
 		defer c.Readiness.SetWorker(false)

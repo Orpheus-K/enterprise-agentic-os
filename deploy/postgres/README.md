@@ -39,11 +39,16 @@
 
 对齐 A10、V15，使用 [backup-restore.sh](backup-restore.sh)（bash；需 `psql`、`pg_dump`、`pg_restore`、`sha256sum`）：
 
-1. 停止全部 AgentOS 实例，设置 `AGENTOS_BACKUP_DATABASE_URL`（应用库的超级用户 URL，不写入脚本或日志），运行 `backup-restore.sh backup <目录>`。产物为自定义格式 dump、`.manifest`（schema 版本、pgvector 版本、强制 RLS 表数、表所有者、关键表行数）和 `.sha256`；备份期间数据变化则删除产物并失败。
+1. 停止全部 AgentOS 实例，设置 `AGENTOS_BACKUP_DATABASE_URL`（应用库的超级用户 URL，不写入脚本或日志），运行 `backup-restore.sh backup <目录>`。产物为自定义格式 dump、v2 `.manifest`（schema/pgvector 版本，iam/channel/knowledge 全部普通表的所有者、RLS 标志、行数与排序行数据 SHA-256）和同时覆盖 dump/manifest 的 `.sha256`；查询失败或前后事实变化则失败，不能仅凭行数不变接受检查点变化。使用随机文件名后缀避免同秒覆盖。必须停写，前后比较不提供在线一致快照保证。
 2. 在目标集群按上文“分离账户”步骤 1—3 准备空库（角色与登录由管理员重建，**不包含在 dump 中**；不执行 vector.sql，dump 自带扩展，须已安装同版本 pgvector 软件包）。
-3. 设置 `AGENTOS_RESTORE_DATABASE_URL` 指向该空库，运行 `backup-restore.sh restore <dump>`：先校验校验和，目标非空（含已有扩展）则拒绝，恢复遇错即停，最后重算事实并与 manifest 逐项比对，不一致即失败。
-4. 恢复后仍须由部署方核对：外部系统在备份点之后已发生的动作（飞书消息、业务写入）不会随数据库回滚，未知结果任务按 [核对流程](../operations.md) 处理；不得假设已成功的副作用可重放。
+3. 设置 `AGENTOS_RESTORE_DATABASE_URL` 指向该空库，运行 `backup-restore.sh restore <dump>`：先校验 dump 与 manifest 的校验和及格式版本，目标非空（含已有扩展）则拒绝，恢复遇错即停，最后重算事实并与 manifest 逐项比对，不一致即失败。
+4. v2 脚本拒绝旧的无版本 manifest；历史 schema-18 演练为旧脚本证据，不可据此把旧包标为通过 v2 验证。恢复失败后的目标保持隔离，不启动服务；修复原因后由管理员准备新空库再试。
+5. 恢复后仍须由部署方核对：外部系统在备份点之后已发生的动作（飞书消息、业务写入）不会随数据库回滚，未知结果任务按 [核对流程](../operations.md) 处理；不得假设已成功的副作用可重放。
 
 演练证据（本机 WSL `17/agentos-m3`，schema 18，含各表族及一条 pgvector 向量的合成数据）：备份→校验和损坏被拒→删除源库→恢复至新空库→manifest 一致→重复恢复至非空库被拒→运行登录恢复后仍无建表权限且无上下文时 RLS 返回 0 行；篡改 manifest 行数的恢复失败。日志 `.tools/m3-backup-drill.log`，残留 0。
+
+补充 schema 22 演练：v2 全表摘要包含同步任务、未知 Embedding 输入和不可变核对记录。真实 PG 恢复后数据摘要一致、未知标记与核对记录保留；manifest 损坏在恢复前拒绝，非空目标拒绝，伪造校验和但检查点摘要错误（行数未变）在恢复后拒绝。运行账号仍无上下文不可读、不可建表。日志 `.tools/m3-backup22-drill.log`；本次仅验证持久状态，不替代恢复后的外部副作用核对或供应商重放测试。
+
+`bash deploy/postgres/backup-errors.test.sh` 是无数据库的故障注入回归，已接 CI：psql 查询失败必须非零退出，不调用 pg_dump、不留下备份产物。旧脚本对该负例错误返回成功，修复后通过。
 
 未覆盖：文件/原件目录与密钥材料的联合备份（当前无文件驱动与密钥库实现）、在线（不停机）一致备份、跨 PG 大版本恢复、RTO/RPO 数值、SQLite 备份。这些不得写成已验收。

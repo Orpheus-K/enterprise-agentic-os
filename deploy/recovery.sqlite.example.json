@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "driver": "sqlite",
+  "channel_config": "C:/AgentOS-site/channel.json",
+  "key_catalog": "C:/AgentOS-secure/key-catalog.json",
+  "wrapping_key_binding": "AGENTOS_BACKUP_KEY_V1",
+  "authority_sqlite_path": "C:/AgentOS-current/runtime.db"
+}

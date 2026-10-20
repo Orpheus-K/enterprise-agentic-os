@@ -33,10 +33,11 @@ type postgresTable struct {
 }
 
 type postgresSnapshot struct {
-	Schema int             `json:"schema"`
-	Major  int             `json:"postgres_major"`
-	Vector string          `json:"pgvector"`
-	Tables []postgresTable `json:"tables"`
+	Schema      int             `json:"schema"`
+	Major       int             `json:"postgres_major"`
+	Vector      string          `json:"pgvector"`
+	Tables      []postgresTable `json:"tables"`
+	OAuthKeyIDs []string        `json:"oauth_key_ids"`
 }
 
 var ErrPostgres = errors.New("PostgreSQL recovery operation failed; target is not approved for runtime use")
@@ -144,6 +145,10 @@ func snapshotPostgres(ctx context.Context, q database.Queries) (postgresSnapshot
 		}
 		snapshot.Tables[i].SHA256 = hex.EncodeToString(hash.Sum(nil))
 	}
+	snapshot.OAuthKeyIDs, err = postgresOAuthKeyIDs(ctx, q)
+	if err != nil {
+		return snapshot, err
+	}
 	return snapshot, nil
 }
 
@@ -177,6 +182,30 @@ func PostgresAuthorization(ctx context.Context, connectionURL string) (string, e
 		return "", err
 	}
 	return postgresAuthorization(snapshot), nil
+}
+
+// Read ciphertext key dependencies from the same transaction as the dump facts.
+func postgresOAuthKeyIDs(ctx context.Context, q database.Queries) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT DISTINCT key_id FROM channel.oauth_credentials ORDER BY key_id LIMIT 129`)
+	if err != nil {
+		return nil, ErrPostgres
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, ErrPostgres
+		}
+		ids = append(ids, id)
+	}
+	if rows.Err() != nil {
+		return nil, ErrPostgres
+	}
+	if len(ids) > 128 {
+		return nil, ErrKeys
+	}
+	return ids, nil
 }
 
 func postgresCommand(ctx context.Context, binary, connectionURL string, args ...string) error {
@@ -232,6 +261,11 @@ func BackupPostgres(ctx context.Context, connectionURL, directory string, config
 	snapshot, err := snapshotPostgres(ctx, tx)
 	if err != nil {
 		return err
+	}
+	for _, id := range snapshot.OAuthKeyIDs {
+		if manifest.OAuthKeyBindings[id] == "" {
+			return ErrKeys
+		}
 	}
 	if err = os.Mkdir(directory, 0700); err != nil {
 		return err
@@ -316,6 +350,11 @@ func RestorePostgres(ctx context.Context, adminURL, directory, targetDB, targetD
 	var snapshot postgresSnapshot
 	if err = json.Unmarshal(state, &snapshot); err != nil || snapshot.Schema != expected.Schema {
 		return ErrInvalid
+	}
+	for _, id := range snapshot.OAuthKeyIDs {
+		if envelope.Manifest.OAuthKeyBindings[id] == "" {
+			return ErrKeys
+		}
 	}
 	admin, err := postgresConnect(ctx, adminURL)
 	if err != nil {

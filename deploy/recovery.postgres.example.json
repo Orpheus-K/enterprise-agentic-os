@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "driver": "postgres",
+  "channel_config": "/opt/agentos-site/channel.json",
+  "key_catalog": "/opt/agentos-secure/key-catalog.json",
+  "wrapping_key_binding": "AGENTOS_BACKUP_KEY_V1",
+  "admin_url_env": "AGENTOS_BACKUP_ADMIN_URL",
+  "authority_url_env": "AGENTOS_CURRENT_AUTHORITY_URL",
+  "pg_dump": "/usr/lib/postgresql/17/bin/pg_dump",
+  "pg_restore": "/usr/lib/postgresql/17/bin/pg_restore"
+}

@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "keys": [
+    { "binding": "AGENTOS_BACKUP_KEY_V1", "id": "site/backup/key", "version": "v1", "enabled": true },
+    { "binding": "AGENTOS_FEISHU_APP_SECRET", "id": "site/feishu/app", "version": "v1", "enabled": true },
+    { "binding": "AGENTOS_FEISHU_VERIFICATION_TOKEN", "id": "site/feishu/verification", "version": "v1", "enabled": true },
+    { "binding": "AGENTOS_FEISHU_ENCRYPT_KEY", "id": "site/feishu/encryption", "version": "v1", "enabled": true },
+    { "binding": "AGENTOS_MODEL_API_KEY", "id": "site/model/key", "version": "v1", "enabled": true },
+    { "binding": "AGENTOS_RUNTIME_DATABASE_URL", "id": "site/database/runtime", "version": "v1", "enabled": true }
+  ]
+}

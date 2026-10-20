@@ -73,6 +73,7 @@ func TestPostgresJointRecovery(t *testing.T) {
 			bundle, target := filepath.Join(root, "bundle"), filepath.Join(root, "restored")
 			manifest, configuration, keys := fixture("postgres")
 			manifest.Version.Schema = database.SchemaVersion
+			manifest.OAuthKeyBindings = map[string]string{"key": "APP_SECRET"}
 			sourceURL := f.AdminURL
 			if scenario == "runtime-role" {
 				sourceURL = f.RuntimeURL

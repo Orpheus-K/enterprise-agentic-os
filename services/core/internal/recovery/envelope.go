@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"regexp"
 	"slices"
 )
@@ -40,13 +41,14 @@ type Artifact struct {
 }
 
 type Manifest struct {
-	Format              int            `json:"format"`
-	Version             Version        `json:"version"`
-	ConfigurationSHA256 string         `json:"configuration_sha256"`
-	AuthorizationSHA256 string         `json:"authorization_sha256"`
-	WrappingKey         KeyReference   `json:"wrapping_key"`
-	Secrets             []KeyReference `json:"secret_references"`
-	Database            []Artifact     `json:"database"`
+	Format              int               `json:"format"`
+	Version             Version           `json:"version"`
+	ConfigurationSHA256 string            `json:"configuration_sha256"`
+	AuthorizationSHA256 string            `json:"authorization_sha256"`
+	WrappingKey         KeyReference      `json:"wrapping_key"`
+	Secrets             []KeyReference    `json:"secret_references"`
+	OAuthKeyBindings    map[string]string `json:"oauth_key_bindings,omitempty"`
+	Database            []Artifact        `json:"database"`
 }
 
 type Envelope struct {
@@ -105,6 +107,14 @@ func (m Manifest) validate() error {
 		}
 		bindings[ref.Binding] = true
 	}
+	if len(m.OAuthKeyBindings) > 128 || (m.Version.Driver == "sqlite" && len(m.OAuthKeyBindings) != 0) {
+		return ErrInvalid
+	}
+	for id, binding := range m.OAuthKeyBindings {
+		if !referencePart.MatchString(id) || !bindings[binding] || binding == m.WrappingKey.Binding {
+			return ErrInvalid
+		}
+	}
 	names := map[string]bool{}
 	for _, file := range m.Database {
 		if !artifactName.MatchString(file.Name) || file.Name == "." || file.Name == ".." ||
@@ -119,6 +129,7 @@ func (m Manifest) validate() error {
 func cloneManifest(m Manifest) Manifest {
 	m.Secrets = slices.Clone(m.Secrets)
 	m.Database = slices.Clone(m.Database)
+	m.OAuthKeyBindings = maps.Clone(m.OAuthKeyBindings)
 	return m
 }
 

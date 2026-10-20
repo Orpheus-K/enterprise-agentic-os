@@ -2,6 +2,8 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
+- 第 13 项完成库层范围：SealPolicy、schema 27 的独立用章授权/版本绑定/单次意图/原子审计；签章前后重验，未知结果不重放。策略撤权纳入 PG 联合恢复授权事实摘要。模型与真实 PG 合成替身覆盖权限、错配、签章中撤权和审计回滚；pnpm check、全量 pnpm test:db 均退出 0（m3-seal-model-check.log、m3-seal-model-full-db.log），定向负例 m3-seal-negatives.log 通过。只读策略查询的首轮 FOR SHARE 权限失败已修复，未放大运行权限。专用 PG 残留 0、已停止；当前 PG schema 27、SQLite 8。真实印章/密钥/外发未接入，契约单点 contracts/quotation.md。下一步第 15 项脚本/诊断脱敏及最终逐项核验。
+
 - 第 12 项完成无人值守评测范围：8 篇/6 查询中文合成语料、CLI、召回/过滤召回/越权指标及逐查询结果；无权限分母为零时 null。关闭过滤、后过滤丢召回、后端篡改评分事实与答案隔离负例通过。实际 CLI 可复现 Recall@3=37/60、Filtered Recall@3=0.8、越权 0；结果与候选认证边界单点见 contracts/retrieval-evaluation.md。pnpm check 退出 0（m3-retrieval-evaluation-check.log）；无数据库修改，未重复 PG。余项为第 13 项用章授权模型、第 15 项运维脚本及最终逐项核验/CI 收口。
 
 - 第 10 项库层范围完成：schema 26 的 PDF 预留/ready、独立发布授权、当前审批资格、对象回读摘要和原子文档审计；同版本只获得一次生成资格，未知不重试。完整 pnpm check、最终 check:go、全量 test:db、最后 TestQuoteDocument（含跨应用 RLS）均退出 0，日志 m3-pdf-ledger-check/final-go/full-db/final-targeted.log。测试库/角色残留 0，专用 PG 已停止。用章仅设计于 contracts/quotation.md，真实对象存储/外发/印章未接入；第 13 项模型仍待实施。

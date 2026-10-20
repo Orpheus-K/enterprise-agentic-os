@@ -155,7 +155,7 @@ func snapshotPostgres(ctx context.Context, q database.Queries) (postgresSnapshot
 func postgresAuthorization(snapshot postgresSnapshot) string {
 	var tables []postgresTable
 	for _, table := range snapshot.Tables {
-		if strings.HasPrefix(table.Name, "iam.") || strings.HasPrefix(table.Name, "knowledge.") && slices.Contains([]string{"knowledge.sources", "knowledge.source_health", "knowledge.documents", "knowledge.chunks"}, table.Name) || strings.HasPrefix(table.Name, "channel.oauth_") {
+		if strings.HasPrefix(table.Name, "iam.") || strings.HasPrefix(table.Name, "knowledge.") && slices.Contains([]string{"knowledge.sources", "knowledge.source_health", "knowledge.documents", "knowledge.chunks"}, table.Name) || strings.HasPrefix(table.Name, "channel.oauth_") || table.Name == "channel.seal_policies" {
 			tables = append(tables, table)
 		}
 	}

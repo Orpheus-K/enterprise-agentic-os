@@ -224,7 +224,7 @@ func TestUpgradeQuarantinesUnownedAttempts(t *testing.T) {
 		t.Fatalf("legacy attempts not quarantined: %v", err)
 	}
 	var protected bool
-	if err := f.Admin.QueryRow(ctx, `SELECT count(*)=14 AND bool_and(c.relrowsecurity AND c.relforcerowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='channel' AND c.relkind='r'`).Scan(&protected); err != nil || !protected {
+	if err := f.Admin.QueryRow(ctx, `SELECT count(*)=17 AND bool_and(c.relrowsecurity AND c.relforcerowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='channel' AND c.relkind='r'`).Scan(&protected); err != nil || !protected {
 		t.Fatal("migration did not restore forced RLS")
 	}
 	var events int

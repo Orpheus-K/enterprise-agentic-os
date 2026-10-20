@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"agentos.local/core/internal/database"
+	"agentos.local/core/internal/quotation"
 	"agentos.local/core/internal/testpg"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -44,7 +45,7 @@ func postgresTestTools(t *testing.T) PostgresTools {
 
 func TestPostgresJointRecovery(t *testing.T) {
 	tools := postgresTestTools(t)
-	for _, scenario := range []string{"valid", "member-revoked", "acl-revoked", "oauth-changed", "revoked-during-restore", "key-revoked", "key-revoked-during-restore", "version", "tampered", "existing", "runtime-role", "restore-command-failed"} {
+	for _, scenario := range []string{"valid", "member-revoked", "acl-revoked", "oauth-changed", "seal-revoked", "revoked-during-restore", "key-revoked", "key-revoked-during-restore", "version", "tampered", "existing", "runtime-role", "restore-command-failed"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := testpg.New(t)
 			ctx := t.Context()
@@ -68,6 +69,13 @@ func TestPostgresJointRecovery(t *testing.T) {
 				if _, err = f.Admin.Exec(ctx, query); err != nil {
 					t.Fatal(err)
 				}
+			}
+			policy, err := quotation.NewSealPolicy(quotation.SealPolicy{TenantID: uuid.MustParse("10000000-0000-0000-0000-000000000001"), AppID: "app", SealID: "synthetic", Members: []uuid.UUID{uuid.MustParse("20000000-0000-0000-0000-000000000001")}, MaximumMinor: 100, NotBefore: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.Admin.Exec(ctx, `INSERT INTO channel.seal_policies(tenant_id,app_id,seal_id,revision,policy) VALUES($1,$2,$3,$4,$5)`, policy.TenantID, policy.AppID, policy.SealID, policy.Revision, policy); err != nil {
+				t.Fatal(err)
 			}
 			root := t.TempDir()
 			bundle, target := filepath.Join(root, "bundle"), filepath.Join(root, "restored")
@@ -112,6 +120,10 @@ func TestPostgresJointRecovery(t *testing.T) {
 			}
 			restoreTools := tools
 			switch scenario {
+			case "seal-revoked":
+				if _, err = f.Admin.Exec(ctx, `UPDATE channel.seal_policies SET enabled=false`); err != nil {
+					t.Fatal(err)
+				}
 			case "member-revoked":
 				revoke()
 			case "acl-revoked":

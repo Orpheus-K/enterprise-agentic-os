@@ -5,7 +5,15 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 任务清单与统计（2026-10-20）
+## 当前切片：SQLite 显式迁移入口（2026-10-20）
+
+- 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-sqlite-migrate。
+- 实现：R19、A03/A10、V15；agentos-migrate 新增 --sqlite 绝对文件路径，拒绝同时设置 PG 迁移 URL，复用独立前向迁移；无参数 PG 路径和离线 --version 保持。说明见 [SQLite 部署](../deploy/sqlite/README.md)。无 schema 变更。
+- 验证：cmd/migrate 与 sqlitedb 全包通过；`pnpm check` 退出 0（`E:/agent-project/.tools/m3-sqlite-migrate-check.log`）。构建后二进制实际创建/重复迁移均成功，冲突目标非零退出，临时数据库已删除。覆盖数据保留、未来 schema、坏参数不创建文件与输出失败；未重复 PG test:db，未修改 PG SQL。
+- 接线发现：Worker.Store 为 *conversation.Store，直接使用私有 prepareKnowledge/routeSummaries/bindRoute 和 db/tenant/app，另有 NotifyOne/LoadSkill/工具与报价方法；operations 和 bootstrap 也绑定 PG。下一片须按基础执行与可选能力拆分消费接口，并保留 PG 行为回归，再接 SQLite；禁止补空成功方法绕过未支持能力。知识/向量配置必须拒绝后才能开放运行入口。
+- 远端：3d6227c 的 CI 39418545746/39418507885 仍 in_progress；本片远端待确认。
+
+## 保留切片：SQLite 任务清单与统计（2026-10-20）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-sqlite-reports。
 - 实现：R15/R18、A03/A08/A10、V06/V13；ListTasks/Stats 同事务当前授权、范围筛选和访问留痕；schema 8 保留旧记录并增加 tasks/stats 范围与分页索引。时间边界与更新时间口径见 [运维契约](../contracts/operations.md#sqlite-任务清单与统计)。PG 仅公开复用窗口校验，schema 22 未变。

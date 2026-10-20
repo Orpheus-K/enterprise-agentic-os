@@ -29,7 +29,7 @@ func (s *Store) WithRoutes(registry *skills.Registry, refs []skills.Ref) (*Store
 	return &copy, nil
 }
 
-func (s *Store) routeSummaries(ctx context.Context, p identity.Principal, refs []skills.Ref) ([]skills.Summary, error) {
+func (s *Store) RouteSummaries(ctx context.Context, p identity.Principal, refs []skills.Ref) ([]skills.Summary, error) {
 	if s.skills == nil {
 		return nil, ErrSkillDenied
 	}
@@ -57,7 +57,7 @@ func (s *Store) routeSummaries(ctx context.Context, p identity.Principal, refs [
 	return result, nil
 }
 
-func (s *Store) bindRoute(ctx context.Context, t *Task, ref skills.Ref) error {
+func (s *Store) BindRoute(ctx context.Context, t *Task, ref skills.Ref) error {
 	if t.State != ModelRunning || t.Skill.Name != "" {
 		return ErrInvalidTransition
 	}
@@ -95,10 +95,14 @@ func (s *Store) bindRoute(ctx context.Context, t *Task, ref skills.Ref) error {
 }
 
 func (w *Worker) route(ctx context.Context, t *Task, finish func(State, string) error) error {
+	skillStore, ok := w.Store.(SkillExecutionStore)
+	if !ok {
+		return ErrUnsupportedExecution
+	}
 	if err := w.authorize(ctx, t); err != nil {
 		return authorizationFailure(err, "route_identity_denied", finish)
 	}
-	summaries, err := w.Store.routeSummaries(ctx, t.Principal, t.Routes)
+	summaries, err := skillStore.RouteSummaries(ctx, t.Principal, t.Routes)
 	if err != nil {
 		return finish(Failed, "route_unavailable")
 	}
@@ -137,7 +141,7 @@ func (w *Worker) route(ctx context.Context, t *Task, finish func(State, string) 
 	if err = w.authorize(ctx, t); err != nil {
 		return authorizationFailure(err, "route_identity_denied", finish)
 	}
-	err = w.Store.bindRoute(ctx, t, ref)
+	err = skillStore.BindRoute(ctx, t, ref)
 	if err == ErrSkillDenied {
 		return finish(Failed, "route_revoked")
 	}

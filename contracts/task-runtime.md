@@ -102,3 +102,11 @@ SQLite 的 NotifySubject 配置明确拒绝：审批通知、报价改单、飞�
 核对必须绑定请求 ID、当前版本和非空证据 ID。unresolved 保留 unknown；not_executed 仅允许模型意图回到 pending，或已有响应的发送意图回到 delivery_pending；delivered 仅允许发送意图转 succeeded。不会从超时推断外部结果。状态、步骤审计与 schema 7 核对账本原子提交；恢复认领后递增租约世代，拒绝旧执行者写入。
 
 同操作员、相同请求和参数重复提交返回首次结果；更换操作员或参数拒绝，重复请求仍复核当前授权。共享 `contracttest.RunReconciliation` 覆盖双连接并发、版本/证据/范围拒绝、撤权、响应复用、错误阶段及账本/步骤审计/访问留痕失败回滚。此接口尚未接入 SQLite HTTP 或 Worker，不包含工具及审批通知的未知结果核对。
+
+## Worker 存储边界
+
+Worker 通过 `ExecutionStore` 使用基础文本任务的到期审批、未知结果扫描、认领、当前授权、续租、状态推进和审批挂起。PostgreSQL 与 SQLite 复用同一执行流程，不复制 Worker。通知、技能/工具/报价、知识分别由 NotificationStore、SkillExecutionStore、KnowledgeExecutionStore 提供；Worker 不再直接访问 PostgreSQL 连接或安装字段。
+
+无对应能力的存储若返回技能、工具、报价或知识引用任务，Worker 在调用模型/发送器前显式返回 ErrUnsupportedExecution；配置通知发送器但存储无通知能力也拒绝。SQLite 不实现这些可选接口，不用空成功结果模拟支持。实际渠道启动前仍需完成 bootstrap、运维 API 的接口接入，以及知识/向量和其他未支持能力的配置拒绝；本片不开放 SQLite 生产入口。
+
+验证包含真实 SQLite 文件上的同 Worker 成功交付、模型/发送未知结果不重放、模型后撤权拒绝发送及重建存储恢复；PostgreSQL 既有审批、检索、工具、报价与通知由完整数据库套件回归。对应 R03/R06、A03/A04/A08、V03/V05/V06。

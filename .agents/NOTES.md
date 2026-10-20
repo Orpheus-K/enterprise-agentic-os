@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：SQLite 显式迁移入口（2026-10-20）
+## 当前切片：Worker 存储接口（2026-10-20）
+
+- 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-worker-storage。
+- 实现：R03/R06、A03/A04/A08、V03/V05/V06；Worker.Store 从 PG 具体类型改为 ExecutionStore，通知、技能执行及知识通过独立能力接口调用，移除 Worker 直接访问 PG 连接。缺能力时明确拒绝相关任务，不实现 SQLite 空成功扩展；规范见 [任务](../contracts/task-runtime.md#worker-存储边界)。
+- SQLite 证据：同一 Worker 在真实 SQLite 文件上成功交付，模型/发送未知后不重放，模型后撤权不发送，重建仓储不重复调用；缺能力的技能/工具/报价/知识任务在外部调用前拒绝。定向 go test 通过。
+- 工程证据：`pnpm check` 退出 0（`E:/agent-project/.tools/m3-worker-storage-check.log`）。全量 test:db 首次 vet 发现 bootstrap 测试依赖 Worker.Store.Enqueue，已改成独立接收接口并保持原断言；失败日志 m3-worker-storage-db.log 保留，重跑全量 `pnpm test:db` 退出 0（m3-worker-storage-db-final.log），覆盖 PG 检索/审批/工具/报价/通知及全部共享驱动契约。测试库/角色残留 0，PG 已停止。
+- 下一片：拆分 operations API 的基础查询/审批/核对与可选报价/通知依赖，再为 bootstrap 配置 SQLite 并提前拒绝知识/向量、技能/工具/报价/通知。当前尚无 SQLite 渠道启动入口。
+- 远端：27ffce4 的 CI 39418969725/39418953628 仍 in_progress；本片远端待确认。
+
+## 保留切片：SQLite 显式迁移入口（2026-10-20）
 
 - 目录：`E:/agent-project/.tools/sqlite-approval-verify`，分支 codex/m3-sqlite-migrate。
 - 实现：R19、A03/A10、V15；agentos-migrate 新增 --sqlite 绝对文件路径，拒绝同时设置 PG 迁移 URL，复用独立前向迁移；无参数 PG 路径和离线 --version 保持。说明见 [SQLite 部署](../deploy/sqlite/README.md)。无 schema 变更。

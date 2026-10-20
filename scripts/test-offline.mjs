@@ -117,9 +117,17 @@ try {
     ...env,
     AGENTOS_MIGRATION_DATABASE_URL: "invalid",
   });
+  const backup = path.join(temporary, "backup");
+  const restoredDatabase = path.join(temporary, "restored.db");
+  assert.match(run(migrate, ["--sqlite-backup", database, backup]), /verified/);
+  assert.match(
+    run(migrate, ["--sqlite-restore", backup, restoredDatabase]),
+    /verified/,
+  );
+  run(migrate, ["--sqlite-restore", backup, restoredDatabase], 1);
   const config = {
     storage_driver: "sqlite",
-    sqlite_path: database,
+    sqlite_path: restoredDatabase,
     binding: {
       tenant_id: "10000000-0000-0000-0000-000000000001",
       app_id: "cli_test",

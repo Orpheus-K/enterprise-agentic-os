@@ -29,12 +29,15 @@ func execute(args []string, getenv func(string) string, output io.Writer) (err e
 		return buildinfo.Write(output, "agentos-migrate")
 	}
 	sqlitePath := ""
+	action, target := "", ""
 	switch {
 	case len(args) == 0:
 	case len(args) == 2 && args[0] == "--sqlite" && args[1] != "":
 		sqlitePath = args[1]
+	case len(args) == 3 && (args[0] == "--sqlite-backup" || args[0] == "--sqlite-restore") && args[1] != "" && args[2] != "":
+		action, sqlitePath, target = args[0], args[1], args[2]
 	default:
-		return errors.New("migrate accepts --version, --sqlite <absolute path>, or no arguments; only forward migrations are supported")
+		return errors.New("migrate accepts --version, --sqlite <absolute path>, --sqlite-backup <source file> <new directory>, --sqlite-restore <backup directory> <new file>, or no arguments")
 	}
 	migrationURL := getenv("AGENTOS_MIGRATION_DATABASE_URL")
 	if sqlitePath != "" && migrationURL != "" {
@@ -42,6 +45,18 @@ func execute(args []string, getenv func(string) string, output io.Writer) (err e
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if action != "" {
+		if action == "--sqlite-backup" {
+			err = sqlitedb.Backup(ctx, sqlitePath, target)
+		} else {
+			err = sqlitedb.Restore(ctx, sqlitePath, target)
+		}
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(output, "SQLite backup/restore verified")
+		return err
+	}
 	if sqlitePath != "" {
 		if err := sqlitedb.Migrate(ctx, sqlitePath); err != nil {
 			return err

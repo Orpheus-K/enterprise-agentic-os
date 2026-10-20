@@ -168,8 +168,9 @@ func sqliteEvent(t *testing.T) *http.Request {
 }
 
 func TestSQLiteOpenApprovalRestartAndRevocation(t *testing.T) {
-	for _, scenario := range []string{"success", "approver_revoked", "sender_revoked"} {
-		t.Run(scenario, func(t *testing.T) {
+	for _, testCase := range []string{"success", "approver_revoked", "sender_revoked", "restored_success", "restored_approver_revoked", "restored_sender_revoked"} {
+		t.Run(testCase, func(t *testing.T) {
+			scenario := strings.TrimPrefix(testCase, "restored_")
 			c := sqliteConfig(t)
 			member := uuid.New()
 			c.Approval = &conversation.ApprovalPolicy{MemberID: member, TTLSeconds: 3600}
@@ -250,6 +251,25 @@ func TestSQLiteOpenApprovalRestartAndRevocation(t *testing.T) {
 			channel.Close()
 			if channel.Readiness.Snapshot(t.Context()).Storage != "unavailable" {
 				t.Fatal("closed database ready")
+			}
+			if strings.HasPrefix(testCase, "restored_") {
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				backup := filepath.Join(t.TempDir(), "backup")
+				if err := sqlitedb.Backup(t.Context(), c.SQLitePath, backup); err != nil {
+					t.Fatal(err)
+				}
+				c.SQLitePath = filepath.Join(t.TempDir(), "restored.db")
+				if err := sqlitedb.Restore(t.Context(), backup, c.SQLitePath); err != nil {
+					t.Fatal(err)
+				}
+				db, err = sqlitedb.Open(t.Context(), c.SQLitePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				path = writeSQLiteConfig(t, c)
 			}
 			channel = open()
 			request := func(method, path string, body []byte) *httptest.ResponseRecorder {

@@ -5,7 +5,16 @@
 - 进展：2026-10-20，工程 M1、M2 已退出；M3 已实现知识存储/健康（15—16）、授权向量检索（17）、任务清单与基础统计（18）、会话引用/检索/交付复核（19，远端 CI 通过）。M3 整体尚未退出。
 - 推进计划：①消费者库层 ✔ ②审计查询/统计 ✔ ③计算隔离部分 ④飞书读取/规范化/身份映射、同步执行器与启动轮询已接线，真实租户联调待完成，已提供授权任务查询 ⑤会话检索远端 CI 通过 ⑥SQLite 首片范围已确认：任务/审批/审计/身份 ⑦PG 备份部分完成 ⑧M3 退出验收待完成。
 
-## 当前切片：Windows SQLite 核心离线包（2026-10-21）
+## 当前切片：SQLite 停写备份恢复（2026-10-21）
+
+- 范围：R03/R06/R19、A03/A04/A10、V03/V05/V15；agentos-migrate 增加 --sqlite-backup 与 --sqlite-restore。默认 DELETE 模式下持有排他锁复制，先验 schema/完整性/外键；生成摘要和时间清单。恢复先验证私有副本，再排他创建新目标，不覆盖、不迁移、不启动 Worker。占用/WAL/错误 schema/外键/篡改/缺失/已有目标明确失败；原 PG 命令不变。单点见 [SQLite 部署](../deploy/sqlite/README.md#停写备份与恢复)。
+- 行为：真实 SQLite 备份恢复后，审批等待可继续批准，审批人与发送者撤权继续阻断；成功、模型未知、发送未知和撤权失败任务不重放。定向 SQLite/bootstrap/Worker/CLI 测试退出 0，日志 E:/agent-project/.tools/m3-sqlite-backup-targeted.log；补外键及命令负例由 pnpm check 覆盖。
+- 演练：m3-sqlite-backup-drill.log 退出 0；126976 字节样本备份 14.0016 ms、恢复 10.9647 ms。仅本机合成数据，不包含停机、配置/密钥或业务核对，不承诺现场 RTO/RPO。数据库/配置/密钥自动联合备份、WAL/在线备份尚未实现；恢复旧快照前必须核对快照之后的外部效果与当前撤权事实。
+- 工程：pnpm check、离线打包和安装测试均退出 0；日志 E:/agent-project/.tools/m3-sqlite-backup-check.log、m3-sqlite-backup-package.log、m3-sqlite-backup-install.log。独立安装测试实际执行备份/恢复与覆盖拒绝，并用恢复文件启动。产物 E:/agent-project/.tools/m3-sqlite-backup-package，基于 7b40ab7 工作树，modified=true，仅内部验收。
+- 检查边界：schema 与 PG 运行语义未变，本片未重复全量 PG test:db；未做真实外发，未推送，远端 Windows CI 未运行。M3 未退出。
+- 差距清单：[M3 退出差距](../deploy/m3-readiness.md) 已汇总现有证据、真实租户前置和待办。下一步优先补 Windows 远端 CI，再推进 OAuth 生命周期与真实租户联调前置；群聊、PDF/用章、Python 隔离及联合恢复仍分别验收。
+
+## 保留切片：Windows SQLite 核心离线包（2026-10-21）
 
 - 范围：R19、A03/A10、V15；`pnpm package:offline <新绝对目录>` 重建前端和两个 Go 二进制，生成 MANIFEST.json、DEPENDENCIES.json、许可原文及 PowerShell 验包器；拒绝覆盖已有目录、无许可文本、模块替换/校验和不符、旧 revision 和错误平台。构建与安装单点见 [离线包](../deploy/offline/README.md)。
 - 制品：E:/agent-project/.tools/m3-offline-package-1；131 个交付文件、41 个 Go 链接模块＋1 项 Go 运行时＋16 个前端生产依赖。前端为保守集合，不宣称精确 SBOM；该验收包基于 e33b684 的工作树构建，modified=true，明确 internal-validation-only。项目未提供 LICENSE；不声明对外发行许可已完成。Python/PG 服务、模型、凭证和客户数据库不打包。

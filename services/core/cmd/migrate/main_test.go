@@ -79,3 +79,31 @@ func TestMigrationOutputFailure(t *testing.T) {
 		t.Fatalf("lost output error: %v", err)
 	}
 }
+
+func TestSQLiteBackupCommands(t *testing.T) {
+	root := t.TempDir()
+	source, backup, target := filepath.Join(root, "source.db"), filepath.Join(root, "backup"), filepath.Join(root, "restored.db")
+	if err := sqlitedb.Migrate(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--sqlite-backup", source, backup}, {"--sqlite-restore", backup, target}} {
+		var output bytes.Buffer
+		if err := execute(args, emptyEnvironment, &output); err != nil || !strings.Contains(output.String(), "verified") {
+			t.Fatalf("command failed: %v %s", err, output.String())
+		}
+		output.Reset()
+		if err := execute(args, emptyEnvironment, &output); err == nil || output.Len() != 0 {
+			t.Fatal("overwrote existing backup/restore target")
+		}
+	}
+	for _, args := range [][]string{{"--sqlite-backup", source}, {"--sqlite-restore", backup}, {"--sqlite-backup", "relative", filepath.Join(root, "invalid")}, {"--sqlite-restore", backup, "relative"}} {
+		var output bytes.Buffer
+		if err := execute(args, emptyEnvironment, &output); err == nil || output.Len() != 0 {
+			t.Fatal("invalid backup arguments accepted")
+		}
+	}
+	var output bytes.Buffer
+	if err := execute([]string{"--sqlite-backup", source, filepath.Join(root, "ambiguous")}, func(string) string { return "private-pg-url" }, &output); err == nil || output.Len() != 0 {
+		t.Fatal("ambiguous driver accepted")
+	}
+}

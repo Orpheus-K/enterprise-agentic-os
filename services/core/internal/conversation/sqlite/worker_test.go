@@ -107,6 +107,30 @@ func TestSharedWorkerWithSQLite(t *testing.T) {
 			if models != 1 || sends != expectedSends {
 				t.Fatalf("external calls %d %d", models, sends)
 			}
+			// A restored successful, unknown or revoked task must not replay effects.
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			backup := filepath.Join(t.TempDir(), "snapshot")
+			restoredPath := filepath.Join(t.TempDir(), "restored.db")
+			if err := sqlitedb.Backup(ctx, path, backup); err != nil {
+				t.Fatal(err)
+			}
+			if err := sqlitedb.Restore(ctx, backup, restoredPath); err != nil {
+				t.Fatal(err)
+			}
+			restored, err := sqlitedb.Open(ctx, restoredPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer restored.Close()
+			worker.Store = NewInbox(restored, tenant, "app", "revision")
+			if worked, err := worker.ProcessOne(ctx); err != nil || worked {
+				t.Fatalf("restored task replayed: %v %v", worked, err)
+			}
+			if models != 1 || sends != expectedSends {
+				t.Fatal("restore repeated external call")
+			}
 		})
 	}
 }

@@ -11,4 +11,4 @@ pnpm test:offline E:\artifacts\agentos-new
 
 前端许可集合使用 `pnpm licenses list --prod --json`，保守包含 workspace 生产依赖；原文递归保留 LICENSE/COPYING/NOTICE/COPYRIGHT/PATENTS/AUTHORS。Go 运行时原文来自构建工具链。DEPENDENCIES.json 提供版本、来源相对路径和文本摘要，MANIFEST.json 提供全部交付文件摘要及二进制身份；不包含本机模块缓存绝对路径。
 
-测试复制到独立目录，用空 PATH 启动二进制，验证文件变更/缺失/额外文件拒绝、身份、SQLite 显式与重复迁移、目标冲突、嵌入静态资源和缺租户就绪拒绝；仅使用本机回环 HTTP。它不替代真实租户联调、备份恢复或完整安装环境矩阵。Linux、服务注册、发布签名、正式 SBOM、本项目发行许可与完整 Python/PG 离线包仍待后续交付切片。
+测试复制到独立目录，用空 PATH 启动二进制，验证文件变更/缺失/额外文件拒绝、身份、SQLite 显式与重复迁移、备份恢复与覆盖拒绝、目标冲突、嵌入静态资源和缺租户就绪拒绝；仅使用本机回环 HTTP。它不替代真实租户联调、配置/密钥联合恢复或完整安装环境矩阵。Linux、服务注册、发布签名、正式 SBOM、本项目发行许可与完整 Python/PG 离线包仍待后续交付切片。

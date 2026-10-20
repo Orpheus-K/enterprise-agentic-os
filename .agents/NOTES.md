@@ -13,9 +13,11 @@
 - 后续规范化：已实现页面/段落/标题/列表/待办的 text_run 及未合并矩形表 → knowledge.Content，按源树排序、保留源块 ID、绑定版本锚点；合并/嵌套表、图片/提及/链接/删除线等暂拒绝整份文档，不截断或丢弃后伪成功。限制与未支持类型以契约为准。
 - 规范化证据：`pnpm check:go` 退出 0（`.tools/m3-feishu-normalize-check.log`）；补充 256 切片边界、空块与样式片段后，`go test -count=1 ./internal/feishudocs` 通过（`.tools/m3-feishu-normalize-tests.log`）。覆盖分页乱序、中文正文、版本锚点、未知内容、缺块和超限；无 SQL 变更，未重复数据库测试。
 - 列表切片：保留显式编号、连续同级 auto 编号和待办完成状态；为子块加入父列表上下文，避免丢失否定/条件。缺编号、缺状态、溢出及上下文超限拒绝。`pnpm check:go` 通过（`.tools/m3-feishu-lists-check.log`），含嵌套语义、编号中断/重启及拒绝部分发布测试；无 SQL 变更，未重复数据库测试。
-- 远端与评审：6b3960b CI 39391058510、2e8457a CI 39392608108/39392460431 均 success；新增列表代码尚待自身远端证据。草稿 [PR #2](https://github.com/Orpheus-K/enterprise-agentic-os/pull/2) 依赖 #1。
+- 远端与评审：6b3960b CI 39391058510、2e8457a CI 39392608108/39392460431、2cb23d6 CI 39393729434/39393721936、010ca72 CI 39394609097/39394603097 均 success。草稿 [PR #2](https://github.com/Orpheus-K/enterprise-agentic-os/pull/2) 依赖 #1。
 - 表格切片：校验行列、cells/children 顺序、明确单位合并跨度；整表为一个 JSON 正文切片，保留表头标记、空单元格、转义字符及父级条件，不单独发布单元格。`pnpm check:go` 通过（`.tools/m3-feishu-tables-check.log`），覆盖价格表关系、缺合并信息/错误几何拒绝、类型错配和序列化后超限；无 SQL 变更，未重复数据库测试。本片远端尚未确认。
-- 下一片：设计可信 IAM/用户凭证映射与持久同步，在原生撤权和来源不可用时阻断旧引用；用已支持的纪要/价格表合成夹具贯穿读取、规范化和发布。完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
+- 身份切片：MappedReader 固定安装 TenantID/AppID/TenantKey，使用现有飞书渠道键解析当前 IAM 成员；远端操作前后复核，停用、撤链、改绑及基础设施失败均不返回快照。Access 只是核验记录，不代替发布事务授权。
+- 身份证据：`pnpm check:go` 通过（`.tools/m3-feishu-mapping-check.log`）；真实 PG `go test -tags=integration -count=1 -run '^TestMappedReaderWithPostgresIdentity$' -v ./internal/feishudocs` 通过（`.tools/m3-feishu-mapping-db.log`）。初次夹具因重复 employee_id 失败，修正合成员工编号后通过。测试库/角色残留 0，17/agentos-m3 已停止；本片远端待确认。无 SQL/迁移修改，未重跑全量 test:db。
+- 下一片：实现持久同步与发布事务，在原生撤权和来源不可用时阻断旧引用；用已支持的纪要/价格表合成夹具贯穿读取、规范化和发布。完成事务与恢复测试前不启用运行时来源同步。SQLite 范围仍待决策。
 
 ## 当前切片：会话检索与交付（2026-10-20）
 

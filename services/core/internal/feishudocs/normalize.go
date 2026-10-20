@@ -1,0 +1,188 @@
+package feishudocs
+
+import (
+	"encoding/json"
+	"errors"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"agentos.local/core/internal/knowledge"
+	"github.com/google/uuid"
+)
+
+var ErrUnsupported = errors.New("unsupported Feishu document content")
+
+// Normalize produces version-bound plain text evidence, not rendered Markdown.
+// It performs no I/O and grants no access. Unsupported content rejects the whole
+// snapshot so that omitted evidence cannot silently change a document's meaning.
+func Normalize(source uuid.UUID, snapshot Snapshot) (knowledge.Content, error) {
+	fail := knowledge.Content{}
+	if source == uuid.Nil || !identifier(snapshot.DocumentID) || snapshot.Revision < 1 ||
+		!cleanText(snapshot.Title) || len(snapshot.Title) > 512 ||
+		strings.TrimSpace(snapshot.Title) != snapshot.Title || snapshot.Title == "" {
+		return fail, ErrInvalid
+	}
+	if len(snapshot.Blocks) > maxBlocks {
+		return fail, ErrLimit
+	}
+	size := 0
+	for _, raw := range snapshot.Blocks {
+		size += len(raw)
+		if size > maxSnapshot {
+			return fail, ErrLimit
+		}
+		if !utf8.Valid(raw) {
+			return fail, ErrInvalid
+		}
+	}
+	if err := completeTree(snapshot.Blocks); err != nil {
+		return fail, err
+	}
+	type node struct {
+		ID       string   `json:"block_id"`
+		Parent   string   `json:"parent_id"`
+		Children []string `json:"children"`
+		Type     int      `json:"block_type"`
+		body     string
+	}
+	nodes := map[string]node{}
+	root := ""
+	for _, raw := range snapshot.Blocks {
+		var n node
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &n) != nil || json.Unmarshal(raw, &fields) != nil {
+			return fail, ErrInvalid
+		}
+		key := ""
+		switch {
+		case n.Type == 1:
+			key = "page"
+		case n.Type == 2:
+			key = "text"
+		case n.Type >= 3 && n.Type <= 11:
+			key = "heading" + strconv.Itoa(n.Type-2)
+		default:
+			return fail, ErrUnsupported
+		}
+		// Unknown block payloads may contain additional evidence. Only known
+		// structural metadata and the selected text payload are accepted.
+		for k := range fields {
+			switch k {
+			case "block_id", "parent_id", "children", "block_type", "comment_ids":
+			default:
+				if k != key {
+					return fail, ErrUnsupported
+				}
+			}
+		}
+		body, err := plainText(fields[key])
+		if err != nil {
+			return fail, err
+		}
+		n.body = strings.TrimSpace(body)
+		if len(n.body) > 16000 {
+			return fail, ErrLimit
+		}
+		if n.Parent == "" {
+			root = n.ID
+		}
+		nodes[n.ID] = n
+	}
+	out := knowledge.Content{SourceID: source, DocumentID: snapshot.DocumentID,
+		Revision: int64(snapshot.Revision), Title: snapshot.Title}
+	// API pagination order is not document order. Traverse declared children
+	// iteratively, preserving source order and avoiding attacker-controlled depth.
+	stack := []string{root}
+	for len(stack) > 0 {
+		id := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		n := nodes[id]
+		if n.body != "" {
+			if len(out.Chunks) == 256 {
+				return fail, ErrLimit
+			}
+			out.Chunks = append(out.Chunks, knowledge.Chunk{ID: id, Body: n.body,
+				Anchor: "feishu-docx:" + snapshot.DocumentID + ":" + strconv.Itoa(snapshot.Revision) + ":" + id})
+		}
+		for i := len(n.Children) - 1; i >= 0; i-- {
+			stack = append(stack, n.Children[i])
+		}
+	}
+	if len(out.Chunks) == 0 {
+		return fail, ErrUnsupported
+	}
+	return out, nil
+}
+
+func cleanText(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+}
+
+func plainText(raw json.RawMessage) (string, error) {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(raw, &payload) != nil || payload == nil {
+		return "", ErrInvalid
+	}
+	for key := range payload {
+		if key != "elements" && key != "style" {
+			return "", ErrUnsupported
+		}
+	}
+	var elements []map[string]json.RawMessage
+	if json.Unmarshal(payload["elements"], &elements) != nil || elements == nil {
+		return "", ErrInvalid
+	}
+	var body strings.Builder
+	for _, element := range elements {
+		if len(element) != 1 || element["text_run"] == nil {
+			return "", ErrUnsupported
+		}
+		var run map[string]json.RawMessage
+		if json.Unmarshal(element["text_run"], &run) != nil || run == nil {
+			return "", ErrInvalid
+		}
+		for key := range run {
+			if key != "content" && key != "text_element_style" {
+				return "", ErrUnsupported
+			}
+		}
+		var content *string
+		if json.Unmarshal(run["content"], &content) != nil || content == nil || !cleanText(*content) {
+			return "", ErrInvalid
+		}
+		// Links and struck-out text carry meaning beyond visible characters;
+		// do not flatten them into an apparently ordinary assertion.
+		if rawStyle, ok := run["text_element_style"]; ok {
+			var style map[string]json.RawMessage
+			if json.Unmarshal(rawStyle, &style) != nil || style == nil {
+				return "", ErrInvalid
+			}
+			for key, value := range style {
+				switch key {
+				case "bold", "italic", "underline", "inline_code":
+					var flag bool
+					if json.Unmarshal(value, &flag) != nil {
+						return "", ErrInvalid
+					}
+				case "strikethrough":
+					if string(value) != "false" {
+						return "", ErrUnsupported
+					}
+				case "text_color", "background_color":
+					var color int
+					if json.Unmarshal(value, &color) != nil {
+						return "", ErrInvalid
+					}
+				default:
+					return "", ErrUnsupported
+				}
+			}
+		}
+		body.WriteString(*content)
+		if body.Len() > 16000 {
+			return "", ErrLimit
+		}
+	}
+	return body.String(), nil
+}

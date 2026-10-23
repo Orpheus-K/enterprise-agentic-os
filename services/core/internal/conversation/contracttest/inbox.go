@@ -37,11 +37,11 @@ func RunInbox(t *testing.T, f InboxFixture) {
 	for _, id := range []uuid.UUID{tenant, other} {
 		write("INSERT INTO iam.tenants(id,name) VALUES($1,'contract')", id.String())
 		write("INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,'member')", id.String(), member.String())
-		write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'feishu','issuer','subject',$2)", id.String(), member.String())
+		write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'contract-channel','issuer','subject',$2)", id.String(), member.String())
 	}
 	write("INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,'replacement')", tenant.String(), replacement.String())
 	m := conversation.Message{EventID: "event", MessageID: "message", Text: "private fixture", Fingerprint: "fingerprint",
-		Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: "subject"}}
+		Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: "subject"}}
 	store := f.New(tenant, "app", "revision")
 	second := f.New(tenant, "app", "revision")
 	var wg sync.WaitGroup

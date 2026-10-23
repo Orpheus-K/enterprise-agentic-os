@@ -40,13 +40,13 @@ func RunReconciliation(t *testing.T, fixture func(*testing.T) ReconcileFixture) 
 			write("INSERT INTO iam.tenants(id,name) VALUES($1,'reconcile')", tenant.String())
 			for _, member := range []uuid.UUID{worker, operator, another} {
 				write("INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,$3)", tenant.String(), member.String(), member.String())
-				write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'feishu','issuer',$2,$3)", tenant.String(), member.String(), member.String())
+				write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'contract-channel','issuer',$2,$3)", tenant.String(), member.String(), member.String())
 			}
 			for _, member := range []uuid.UUID{operator, another} {
 				write("INSERT INTO iam.operation_grants(tenant_id,member_id,app_id,capability) VALUES($1,$2,'app','task.reconcile')", tenant.String(), member.String())
 			}
 			store := f.New(tenant, "app", "revision")
-			actor := identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: operator.String()}
+			actor := identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: operator.String()}
 			message := conversation.Message{EventID: "event", MessageID: "message", Text: "secret input", Fingerprint: "hash", Identity: actor}
 			message.Identity.Subject = worker.String()
 			if err := store.Enqueue(ctx, message); err != nil {

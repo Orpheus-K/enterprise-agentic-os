@@ -40,7 +40,7 @@ func RunReports(t *testing.T, f ReportFixture) {
 		write("INSERT INTO iam.tenants(id,name) VALUES($1,'audit')", id.String())
 		for _, member := range []uuid.UUID{worker, auditor} {
 			write("INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,$3)", id.String(), member.String(), member.String())
-			write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'feishu','issuer',$2,$3)", id.String(), member.String(), member.String())
+			write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'contract-channel','issuer',$2,$3)", id.String(), member.String(), member.String())
 		}
 	}
 	for _, app := range []string{"app", "other-app"} {
@@ -50,7 +50,7 @@ func RunReports(t *testing.T, f ReportFixture) {
 		t.Helper()
 		store := f.New(id, app, "revision")
 		err := store.Enqueue(ctx, conversation.Message{EventID: "event", MessageID: "message", Text: "secret prompt", Fingerprint: "hash",
-			Identity: identity.ExternalIdentity{TenantID: id, Provider: "feishu", Issuer: "issuer", Subject: worker.String()}})
+			Identity: identity.ExternalIdentity{TenantID: id, Provider: "contract-channel", Issuer: "issuer", Subject: worker.String()}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func RunReports(t *testing.T, f ReportFixture) {
 	otherAppTask, otherTenantTask := claim(otherApp), claim(otherTenant)
 
 	reader := f.New(tenant, "app", "new-revision")
-	actor := identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: auditor.String()}
+	actor := identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: auditor.String()}
 	now := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
 	// Stable timestamps exercise both half-open boundaries and tie-breaking.
 	for _, taskID := range []uuid.UUID{task.ID, otherAppTask.ID, otherTenantTask.ID} {
@@ -111,7 +111,7 @@ func RunReports(t *testing.T, f ReportFixture) {
 	}
 
 	// A second task at the same timestamp proves UUID tie-breaking and pagination.
-	if err := store.Enqueue(ctx, conversation.Message{EventID: "second", MessageID: "second", Text: "secret", Fingerprint: "hash", Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: worker.String()}}); err != nil {
+	if err := store.Enqueue(ctx, conversation.Message{EventID: "second", MessageID: "second", Text: "secret", Fingerprint: "hash", Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: worker.String()}}); err != nil {
 		t.Fatal(err)
 	}
 	second := claim(store)

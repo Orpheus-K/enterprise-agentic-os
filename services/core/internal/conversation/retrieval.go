@@ -69,10 +69,10 @@ func knowledgeError(err error) error {
 // It leaves the last checked actor's transaction-local context installed.
 func (s *Store) checkTaskKnowledge(ctx context.Context, q database.Queries, id uuid.UUID, recipient *identity.ExternalIdentity, recipientMember uuid.UUID) error {
 	var refs []knowledge.Reference
-	actor := identity.ExternalIdentity{TenantID: s.tenant, Provider: "feishu"}
+	actor := identity.ExternalIdentity{TenantID: s.tenant}
 	var member uuid.UUID
-	if err := q.QueryRow(ctx, `SELECT knowledge_refs,member_id,issuer,subject FROM channel.tasks WHERE tenant_id=$1 AND app_id=$2 AND model_revision=$3 AND id=$4`,
-		s.tenant, s.app, s.revision, id).Scan(&refs, &member, &actor.Issuer, &actor.Subject); err != nil {
+	if err := q.QueryRow(ctx, `SELECT knowledge_refs,member_id,provider,issuer,subject FROM channel.tasks WHERE tenant_id=$1 AND app_id=$2 AND model_revision=$3 AND id=$4`,
+		s.tenant, s.app, s.revision, id).Scan(&refs, &member, &actor.Provider, &actor.Issuer, &actor.Subject); err != nil {
 		return err
 	}
 	if refs == nil {

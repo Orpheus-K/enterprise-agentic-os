@@ -43,14 +43,14 @@ func RunApprovals(t *testing.T, fixture func(*testing.T) ApprovalFixture) {
 			write("INSERT INTO iam.tenants(id,name) VALUES($1,'approval')", tenant.String())
 			for _, member := range []uuid.UUID{user, approver} {
 				write("INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,$3)", tenant.String(), member.String(), member.String())
-				write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'feishu','issuer',$2,$3)", tenant.String(), member.String(), member.String())
+				write("INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'contract-channel','issuer',$2,$3)", tenant.String(), member.String(), member.String())
 			}
 			write("INSERT INTO iam.operation_grants(tenant_id,member_id,app_id,capability) VALUES($1,$2,'app','task.approve')", tenant.String(), approver.String())
 			store, err := f.New(tenant, "app", "revision", &conversation.ApprovalPolicy{MemberID: approver, TTLSeconds: 60})
 			if err != nil {
 				t.Fatal(err)
 			}
-			actor := identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: approver.String()}
+			actor := identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: approver.String()}
 			message := conversation.Message{EventID: "event", MessageID: "message", Text: "input", Fingerprint: "hash", Identity: actor}
 			message.Identity.Subject = user.String()
 			if err := store.Enqueue(ctx, message); err != nil {

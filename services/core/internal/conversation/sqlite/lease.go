@@ -40,7 +40,7 @@ SELECT tenant_id,id,?,?,?,lease_generation,step_version FROM channel_tasks WHERE
 
 func (s *Inbox) Claim(ctx context.Context) (*conversation.Task, error) {
 	task := conversation.Task{Principal: identity.Principal{TenantID: s.tenant}}
-	task.Message.Identity = identity.ExternalIdentity{TenantID: s.tenant, Provider: "feishu"}
+	task.Message.Identity = identity.ExternalIdentity{TenantID: s.tenant}
 	var tid, sid string
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx, `UPDATE channel_tasks SET
@@ -49,9 +49,9 @@ lease_owner=?,lease_until=unixepoch('subsec')+90,lease_generation=lease_generati
 WHERE tenant_id=? AND id=(SELECT id FROM channel_tasks WHERE tenant_id=? AND app_id=? AND model_revision=?
 AND (state='pending' OR (state IN ('claimed','delivery_pending') AND lease_until<=unixepoch('subsec')))
 ORDER BY created_at,id LIMIT 1)
-RETURNING id,member_id,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,'')`,
+RETURNING id,member_id,provider,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,'')`,
 			s.owner.String(), s.tenant.String(), s.tenant.String(), s.app, s.revision).
-			Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Issuer, &task.Message.Identity.Subject,
+			Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Provider, &task.Message.Identity.Issuer, &task.Message.Identity.Subject,
 				&task.Message.EventID, &task.Message.MessageID, &task.Message.Text, &tid, &sid, &task.State, &task.Generation, &task.Version, &task.Response)
 		if err != nil {
 			return err

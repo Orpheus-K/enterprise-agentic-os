@@ -26,7 +26,7 @@ func TestTaskListAndStatsStayInScope(t *testing.T) {
 	ctx := t.Context()
 	extra := []uuid.UUID{uuid.New(), uuid.New()}
 	for i, id := range extra {
-		if _, err := f.pg.Admin.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,state,created_at) VALUES($1,$2,$3,'app_a','private-issuer','private-subject',$4,$4,'fingerprint','revision','secret-prompt','failed',now()+$5::int*interval '1 second')`, f.tenant, id, f.member, id.String(), i+1); err != nil {
+		if _, err := f.pg.Admin.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,provider,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,state,created_at) VALUES($1,$2,$3,'app_a','contract-channel','private-issuer','private-subject',$4,$4,'fingerprint','revision','secret-prompt','failed',now()+$5::int*interval '1 second')`, f.tenant, id, f.member, id.String(), i+1); err != nil {
 			t.Fatal(err)
 		}
 	}

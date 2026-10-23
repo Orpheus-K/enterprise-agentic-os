@@ -99,8 +99,8 @@ func (s *Store) Enqueue(ctx context.Context, m Message) error {
 			approver = s.approval.MemberID
 			ttl = s.approval.TTLSeconds
 		}
-		result, err := q.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,ingress_trace_id,ingress_span_id,approval_member,approval_ttl,skill_name,skill_revision,skill_routes,approval_recipient)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) ON CONFLICT DO NOTHING`, s.tenant, id, p.MemberID, s.app, m.Identity.Issuer, m.Identity.Subject, m.EventID, m.MessageID, m.Fingerprint, s.revision, m.Text, spanTraceID(ctx), spanID, approver, ttl, skillName, skillRevision, routeJSON, recipient)
+		result, err := q.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,provider,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,ingress_trace_id,ingress_span_id,approval_member,approval_ttl,skill_name,skill_revision,skill_routes,approval_recipient)
+   VALUES($1,$2,$3,$4,$20,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) ON CONFLICT DO NOTHING`, s.tenant, id, p.MemberID, s.app, m.Identity.Issuer, m.Identity.Subject, m.EventID, m.MessageID, m.Fingerprint, s.revision, m.Text, spanTraceID(ctx), spanID, approver, ttl, skillName, skillRevision, routeJSON, recipient, m.Identity.Provider)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func (s *Store) scoped(ctx context.Context, fn func(database.Queries) error) err
 func (s *Store) Claim(ctx context.Context) (*Task, error) {
 	var task Task
 	task.Principal.TenantID = s.tenant
-	task.Message.Identity = identity.ExternalIdentity{TenantID: s.tenant, Provider: "feishu"}
+	task.Message.Identity = identity.ExternalIdentity{TenantID: s.tenant}
 	var ingressTrace, ingressSpan string
 	err := s.scoped(ctx, func(q database.Queries) error {
 		err := q.QueryRow(ctx, `UPDATE channel.tasks SET state=CASE WHEN state IN ('delivery_pending','tool_pending','tool_running') THEN state ELSE 'claimed' END,
@@ -149,8 +149,8 @@ func (s *Store) Claim(ctx context.Context) (*Task, error) {
  WHERE (tenant_id,id)=(SELECT tenant_id,id FROM channel.tasks WHERE tenant_id=$1 AND app_id=$2 AND model_revision=$3
  AND (state='pending' OR (state IN ('claimed','delivery_pending','tool_pending','tool_running') AND lease_until<=clock_timestamp()))
  ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
- RETURNING id,member_id,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,''),coalesce(skill_name,''),coalesce(skill_revision,''),tool_history,tool_invocation,tool_steps,skill_routes,coalesce(quote_version,0),knowledge_refs`,
-			s.tenant, s.app, s.revision, s.owner).Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Issuer, &task.Message.Identity.Subject, &task.Message.EventID, &task.Message.MessageID, &task.Message.Text, &ingressTrace, &ingressSpan, &task.State, &task.Generation, &task.Version, &task.Response, &task.Skill.Name, &task.Skill.Revision, &task.History, &task.Tool, &task.ToolSteps, &task.Routes, &task.QuoteVersion, &task.KnowledgeRefs)
+ RETURNING id,member_id,provider,issuer,subject,event_id,message_id,prompt,ingress_trace_id,ingress_span_id,state,lease_generation,step_version,coalesce(response,''),coalesce(skill_name,''),coalesce(skill_revision,''),tool_history,tool_invocation,tool_steps,skill_routes,coalesce(quote_version,0),knowledge_refs`,
+			s.tenant, s.app, s.revision, s.owner).Scan(&task.ID, &task.Principal.MemberID, &task.Message.Identity.Provider, &task.Message.Identity.Issuer, &task.Message.Identity.Subject, &task.Message.EventID, &task.Message.MessageID, &task.Message.Text, &ingressTrace, &ingressSpan, &task.State, &task.Generation, &task.Version, &task.Response, &task.Skill.Name, &task.Skill.Revision, &task.History, &task.Tool, &task.ToolSteps, &task.Routes, &task.QuoteVersion, &task.KnowledgeRefs)
 		if err != nil {
 			return err
 		}

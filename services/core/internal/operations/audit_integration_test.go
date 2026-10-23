@@ -65,7 +65,7 @@ func setup(t *testing.T) *fixture {
 		tenant, member, task uuid.UUID
 		app                  string
 	}{{f.tenant, f.member, f.task, "app_a"}, {f.tenant, f.member, f.otherApp, "app_b"}, {tenantB, memberB, f.otherTenant, "app_a"}} {
-		if _, err := pg.Admin.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,response) VALUES($1,$2,$3,$4,'private-issuer','private-subject',$5,$5,'fingerprint','revision','secret-prompt','secret-output')`, row.tenant, row.task, row.member, row.app, row.task.String()); err != nil {
+		if _, err := pg.Admin.Exec(ctx, `INSERT INTO channel.tasks(tenant_id,id,member_id,app_id,provider,issuer,subject,event_id,message_id,fingerprint,model_revision,prompt,response) VALUES($1,$2,$3,$4,'contract-channel','private-issuer','private-subject',$5,$5,'fingerprint','revision','secret-prompt','secret-output')`, row.tenant, row.task, row.member, row.app, row.task.String()); err != nil {
 			t.Fatal(err)
 		}
 		for _, state := range []string{"pending", "model_running", "succeeded"} {

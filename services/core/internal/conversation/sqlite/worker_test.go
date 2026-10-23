@@ -37,7 +37,7 @@ func TestSharedWorkerWithSQLite(t *testing.T) {
 			}
 			defer db.Close()
 			tenant, member := uuid.New(), uuid.New()
-			for index, q := range []string{"INSERT INTO iam_tenants(id,name) VALUES(?,'worker')", "INSERT INTO iam_members(tenant_id,id,employee_id) VALUES(?,?,'employee')", "INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'feishu','issuer','subject',?)"} {
+			for index, q := range []string{"INSERT INTO iam_tenants(id,name) VALUES(?,'worker')", "INSERT INTO iam_members(tenant_id,id,employee_id) VALUES(?,?,'employee')", "INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'contract-channel','issuer','subject',?)"} {
 				args := []any{tenant.String()}
 				if index > 0 {
 					args = append(args, member.String())
@@ -47,7 +47,7 @@ func TestSharedWorkerWithSQLite(t *testing.T) {
 				}
 			}
 			store := NewInbox(db, tenant, "app", "revision")
-			if err := store.Enqueue(ctx, conversation.Message{EventID: "e", MessageID: "m", Text: "prompt", Fingerprint: "h", Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: "subject"}}); err != nil {
+			if err := store.Enqueue(ctx, conversation.Message{EventID: "e", MessageID: "m", Text: "prompt", Fingerprint: "h", Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: "subject"}}); err != nil {
 				t.Fatal(err)
 			}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))

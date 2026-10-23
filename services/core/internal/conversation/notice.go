@@ -29,7 +29,7 @@ func (s *Store) enqueueNotice(ctx context.Context, q database.Queries, id uuid.U
 // NotifyOne persists intent before sending. An expired or failed send is never replayed.
 func (s *Store) NotifyOne(ctx context.Context, sender Notifier) (bool, error) {
 	var task, id, member uuid.UUID
-	var recipient, issuer, hash string
+	var provider, recipient, issuer, hash string
 	var version, attempt int64
 	var notice ApprovalNotice
 	send, worked := false, false
@@ -43,7 +43,7 @@ func (s *Store) NotifyOne(ctx context.Context, sender Notifier) (bool, error) {
 			return err
 		}
 		var state string
-		err = q.QueryRow(ctx, `SELECT id,member_id,recipient,issuer,content_hash,waiting_version,state FROM channel.approval_notices WHERE tenant_id=$1 AND task_id=$2 AND (state='pending' OR (state='sending' AND lease_until<=clock_timestamp())) ORDER BY waiting_version,id LIMIT 1`, s.tenant, task).Scan(&id, &member, &recipient, &issuer, &hash, &version, &state)
+		err = q.QueryRow(ctx, `SELECT id,member_id,recipient,issuer,content_hash,waiting_version,state,(SELECT provider FROM channel.tasks t WHERE t.tenant_id=$1 AND t.id=$2) FROM channel.approval_notices WHERE tenant_id=$1 AND task_id=$2 AND (state='pending' OR (state='sending' AND lease_until<=clock_timestamp())) ORDER BY waiting_version,id LIMIT 1`, s.tenant, task).Scan(&id, &member, &recipient, &issuer, &hash, &version, &state, &provider)
 		// The task candidate's statement snapshot may precede another sender's
 		// commit. Recheck under the task lock; an exhausted candidate is no work.
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -73,7 +73,7 @@ func (s *Store) NotifyOne(ctx context.Context, sender Notifier) (bool, error) {
 		if _, err = q.Exec(ctx, "SELECT set_config('agentos.member_id',$1,true)", member.String()); err != nil {
 			return err
 		}
-		actor := identity.ExternalIdentity{TenantID: s.tenant, Provider: "feishu", Issuer: issuer, Subject: recipient}
+		actor := identity.ExternalIdentity{TenantID: s.tenant, Provider: provider, Issuer: issuer, Subject: recipient}
 		if err = s.approvalActor(ctx, q, actor, member); err != nil {
 			if errors.Is(err, identity.ErrUnauthenticated) || errors.Is(err, identitypg.ErrForbidden) {
 				return finish("cancelled")

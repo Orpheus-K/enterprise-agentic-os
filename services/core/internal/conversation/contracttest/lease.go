@@ -38,7 +38,7 @@ func RunLeases(t *testing.T, f LeaseFixture) {
 	}{
 		{"INSERT INTO iam.tenants(id,name) VALUES($1,'lease')", []any{tenant.String()}},
 		{"INSERT INTO iam.members(tenant_id,id,employee_id) VALUES($1,$2,'lease')", []any{tenant.String(), member.String()}},
-		{"INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'feishu','issuer','subject',$2)", []any{tenant.String(), member.String()}},
+		{"INSERT INTO iam.identity_links(tenant_id,provider,issuer,subject,member_id) VALUES($1,'contract-channel','issuer','subject',$2)", []any{tenant.String(), member.String()}},
 	} {
 		if err := f.Exec(statement.sql, statement.args...); err != nil {
 			t.Fatal(err)
@@ -46,7 +46,7 @@ func RunLeases(t *testing.T, f LeaseFixture) {
 	}
 	first, second := f.New(tenant, "app", "revision"), f.New(tenant, "app", "revision")
 	message := conversation.Message{EventID: "event", MessageID: "message", Text: "fixture", Fingerprint: "hash",
-		Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "feishu", Issuer: "issuer", Subject: "subject"}}
+		Identity: identity.ExternalIdentity{TenantID: tenant, Provider: "contract-channel", Issuer: "issuer", Subject: "subject"}}
 	if err := first.Enqueue(ctx, message); err != nil {
 		t.Fatal(err)
 	}

@@ -1,14 +1,15 @@
 {
-  "mode": "websocket",
-  "binding": {
-    "tenant_id": "10000000-0000-0000-0000-000000000001",
-    "app_id": "cli_replace",
-    "tenant_key": "replace"
+  "tenant_id": "10000000-0000-0000-0000-000000000001",
+  "app_id": "cli_replace",
+  "channel": {
+    "type": "feishu",
+    "tenant_key": "replace",
+    "mode": "websocket",
+    "app_secret_env": "AGENTOS_FEISHU_APP_SECRET",
+    "verification_token_env": "AGENTOS_FEISHU_VERIFICATION_TOKEN",
+    "encrypt_key_env": "AGENTOS_FEISHU_ENCRYPT_KEY"
   },
   "database_url_env": "AGENTOS_RUNTIME_DATABASE_URL",
-  "app_secret_env": "AGENTOS_FEISHU_APP_SECRET",
-  "verification_token_env": "AGENTOS_FEISHU_VERIFICATION_TOKEN",
-  "encrypt_key_env": "AGENTOS_FEISHU_ENCRYPT_KEY",
   "model": {
     "endpoint": "https://approved-model.example/v1/chat/completions",
     "name": "replace-with-approved-model",

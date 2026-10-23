@@ -44,7 +44,8 @@ func TestOpenRetrievalValidatesSpaceAndRunsWorker(t *testing.T) {
 			if err = errors.Join(err, m.Close()); err != nil {
 				t.Fatal(err)
 			}
-			b := feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"}
+			tenantID, appID := uuid.New(), "cli_test"
+			b := feishu.Binding{TenantID: tenantID, AppID: appID, TenantKey: "tenant"}
 			member, spaceID := uuid.New(), uuid.New()
 			for _, s := range []struct {
 				query string
@@ -103,7 +104,7 @@ func TestOpenRetrievalValidatesSpaceAndRunsWorker(t *testing.T) {
 			t.Setenv("AGENTOS_BOOT_RETRIEVAL_APP", "synthetic-app")
 			t.Setenv("AGENTOS_BOOT_RETRIEVAL_EMBED", "synthetic-embed")
 			t.Setenv("AGENTOS_BOOT_RETRIEVAL_CHAT", "synthetic-chat")
-			c := Config{Binding: b, Mode: "websocket", DatabaseURLEnv: "AGENTOS_BOOT_RETRIEVAL_DB", AppSecretEnv: "AGENTOS_BOOT_RETRIEVAL_APP",
+			c := Config{TenantID: tenantID, AppID: appID, Channel: testFeishu("websocket", "AGENTOS_BOOT_RETRIEVAL_APP", "", ""), DatabaseURLEnv: "AGENTOS_BOOT_RETRIEVAL_DB",
 				Model:     model.Config{Endpoint: server.URL + "/chat/completions", Name: "chat", MaxTokens: 64, AllowHTTP: true, APIKeyEnv: "AGENTOS_BOOT_RETRIEVAL_CHAT"},
 				Embedding: &model.EmbeddingConfig{Endpoint: server.URL + "/embeddings", Name: "embed", Revision: "v1", Dimensions: 3, AllowHTTP: true, APIKeyEnv: "AGENTOS_BOOT_RETRIEVAL_EMBED"},
 				Retrieval: &conversation.RetrievalPolicy{Space: knowledge.Space{ID: spaceID, Model: "embed", ModelRevision: "v1"}, Limit: 3}}

@@ -14,12 +14,12 @@ import (
 )
 
 func TestRetrievalConfigurationAndExecutionRevision(t *testing.T) {
-	base := Config{Binding: feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"}, Mode: "websocket", DatabaseURLEnv: "DB", AppSecretEnv: "SECRET",
+	base := Config{TenantID: uuid.New(), AppID: "cli_test", Channel: testFeishu("websocket", "SECRET", "", ""), DatabaseURLEnv: "DB",
 		Model: model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "chat", MaxTokens: 64}}
 	legacy, _ := json.Marshal(struct {
 		Binding feishu.Binding
 		Model   model.Config
-	}{base.Binding, base.Model})
+	}{base.feishuBinding(), base.Model})
 	sum := sha256.Sum256(legacy)
 	if base.executionRevision() != hex.EncodeToString(sum[:]) {
 		t.Fatal("pure-chat fingerprint changed")
@@ -43,7 +43,11 @@ func TestRetrievalConfigurationAndExecutionRevision(t *testing.T) {
 		changed bool
 	}{
 		{"same", func(*Config) {}, true, false},
-		{"transport", func(c *Config) { c.Mode = "webhook"; c.VerificationTokenEnv = "VERIFY"; c.EncryptKeyEnv = "ENCRYPT" }, true, false},
+		{"transport", func(c *Config) {
+			c.Channel.Feishu.Mode = "webhook"
+			c.Channel.Feishu.VerificationTokenEnv = "VERIFY"
+			c.Channel.Feishu.EncryptKeyEnv = "ENCRYPT"
+		}, true, false},
 		{"space", func(c *Config) { c.Retrieval.Space.ID = uuid.New() }, true, true},
 		{"limit", func(c *Config) { c.Retrieval.Limit = 5 }, true, true},
 		{"endpoint", func(c *Config) { c.Embedding.Endpoint = "https://another-approved.example/v1/embeddings" }, true, true},
@@ -56,7 +60,7 @@ func TestRetrievalConfigurationAndExecutionRevision(t *testing.T) {
 		{"unbounded retrieval", func(c *Config) { c.Retrieval.Limit = 51 }, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			test := c
+			test := c.cloneChannel()
 			ep, policy := e, p
 			test.Embedding, test.Retrieval = &ep, &policy
 			tc.change(&test)

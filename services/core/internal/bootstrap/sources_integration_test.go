@@ -32,8 +32,7 @@ func TestOpenSourcesValidatesWithoutScheduling(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := sourceTestConfig()
-	c.Mode = "webhook"
-	c.VerificationTokenEnv, c.EncryptKeyEnv = "SOURCE_VERIFY", "SOURCE_ENCRYPT"
+	c.Channel = testFeishu("webhook", "SOURCE_APP", "SOURCE_VERIFY", "SOURCE_ENCRYPT")
 	member := uuid.New()
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -41,11 +40,11 @@ func TestOpenSourcesValidatesWithoutScheduling(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	exec("INSERT INTO iam.tenants VALUES($1,'synthetic',true)", c.Binding.TenantID)
-	exec("INSERT INTO iam.members VALUES($1,$2,'sync',true)", c.Binding.TenantID, member)
-	exec("INSERT INTO iam.identity_links VALUES($1,'feishu',$2,'ou_sync',$3,true)", c.Binding.TenantID, c.Binding.Issuer(), member)
-	exec("INSERT INTO knowledge.sources VALUES($1,'cli_test',$2,$3,true)", c.Binding.TenantID, c.Sources[0].SourceID, member)
-	exec("INSERT INTO knowledge.embedding_spaces VALUES($1,'cli_test',$2,'embed','v1',3,true)", c.Binding.TenantID, c.Sources[0].Space.ID)
+	exec("INSERT INTO iam.tenants VALUES($1,'synthetic',true)", c.TenantID)
+	exec("INSERT INTO iam.members VALUES($1,$2,'sync',true)", c.TenantID, member)
+	exec("INSERT INTO iam.identity_links VALUES($1,'feishu',$2,'ou_sync',$3,true)", c.TenantID, c.feishuBinding().Issuer(), member)
+	exec("INSERT INTO knowledge.sources VALUES($1,'cli_test',$2,$3,true)", c.TenantID, c.Sources[0].SourceID, member)
+	exec("INSERT INTO knowledge.embedding_spaces VALUES($1,'cli_test',$2,'embed','v1',3,true)", c.TenantID, c.Sources[0].Space.ID)
 	for name, value := range map[string]string{"SOURCE_DB": pg.RuntimeURL, "SOURCE_APP": "synthetic", "SOURCE_OWNER": "synthetic", "SOURCE_READER": "synthetic", "SOURCE_VERIFY": "synthetic", "SOURCE_ENCRYPT": "synthetic", "SOURCE_OPS": "synthetic-operator-token-at-least-32-bytes"} {
 		t.Setenv(name, value)
 	}

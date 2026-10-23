@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"agentos.local/core/internal/conversation"
-	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/health"
 	"agentos.local/core/internal/model"
 	"agentos.local/core/internal/quotation"
@@ -37,8 +36,8 @@ func sqliteConfig(t *testing.T) Config {
 	t.Setenv("SQLITE_BOOT_KEY", "synthetic-key")
 	t.Setenv("SQLITE_BOOT_OPS", strings.Repeat("x", 32))
 	return Config{StorageDriver: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "runtime.db"),
-		Binding: feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"},
-		Mode:    "webhook", AppSecretEnv: "SQLITE_BOOT_APP", VerificationTokenEnv: "SQLITE_BOOT_TOKEN", EncryptKeyEnv: "SQLITE_BOOT_KEY",
+		TenantID: uuid.New(), AppID: "cli_test",
+		Channel:    testFeishu("webhook", "SQLITE_BOOT_APP", "SQLITE_BOOT_TOKEN", "SQLITE_BOOT_KEY"),
 		Model:      model.Config{Endpoint: "https://approved.example/chat/completions", Name: "approved", MaxTokens: 64},
 		Operations: &OperationsConfig{TokenEnv: "SQLITE_BOOT_OPS", Subject: "operator"}}
 }
@@ -196,11 +195,11 @@ func TestSQLiteOpenApprovalRestartAndRevocation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			exec("INSERT INTO iam_tenants(id,name) VALUES(?,'test')", c.Binding.TenantID.String())
-			exec("INSERT INTO iam_members(tenant_id,id,employee_id) VALUES(?,?,'employee')", c.Binding.TenantID.String(), member.String())
-			exec("INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'feishu',?,'ou_user',?)", c.Binding.TenantID.String(), c.Binding.Issuer(), member.String())
-			exec("INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'operator',?,'operator',?)", c.Binding.TenantID.String(), c.operator().Issuer, member.String())
-			exec("INSERT INTO iam_operation_grants(tenant_id,member_id,app_id,capability) VALUES(?,?,?,'task.approve')", c.Binding.TenantID.String(), member.String(), c.Binding.AppID)
+			exec("INSERT INTO iam_tenants(id,name) VALUES(?,'test')", c.TenantID.String())
+			exec("INSERT INTO iam_members(tenant_id,id,employee_id) VALUES(?,?,'employee')", c.TenantID.String(), member.String())
+			exec("INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'feishu',?,'ou_user',?)", c.TenantID.String(), c.feishuBinding().Issuer(), member.String())
+			exec("INSERT INTO iam_identity_links(tenant_id,provider,issuer,subject,member_id) VALUES(?,'operator',?,'operator',?)", c.TenantID.String(), c.operator().Issuer, member.String())
+			exec("INSERT INTO iam_operation_grants(tenant_id,member_id,app_id,capability) VALUES(?,?,?,'task.approve')", c.TenantID.String(), member.String(), c.AppID)
 			path := writeSQLiteConfig(t, c)
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			var sends int

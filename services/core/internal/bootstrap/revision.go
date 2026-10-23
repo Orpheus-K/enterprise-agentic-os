@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 
 	"agentos.local/core/internal/conversation"
-	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/model"
 )
 
@@ -19,11 +18,11 @@ func (c Config) executionRevision() string {
 	}
 	raw, _ := json.Marshal(struct {
 		QuotationWASMSHA256 string `json:",omitempty"`
-		Binding             feishu.Binding
+		Binding             any
 		Model               model.Config
 		Retrieval           *conversation.RetrievalPolicy `json:",omitempty"`
 		Embedding           *model.EmbeddingConfig        `json:",omitempty"`
-	}{c.QuotationWASMSHA256, c.Binding, c.Model, c.Retrieval, embedding})
+	}{c.QuotationWASMSHA256, c.feishuBinding(), c.Model, c.Retrieval, embedding})
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }

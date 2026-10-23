@@ -85,7 +85,7 @@ func run(logger *slog.Logger) error {
 		})
 	}
 	if channel != nil && channel.Handler != nil {
-		mux.Handle("/api/channels/feishu/events", channel.Handler)
+		mux.Handle("/api/channels/"+channel.Provider+"/events", channel.Handler)
 	}
 	server := &http.Server{
 		Handler:           mux,

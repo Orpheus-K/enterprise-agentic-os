@@ -154,7 +154,7 @@ func RunOAuth(ctx context.Context, path string, input io.Reader, output io.Write
 	if err != nil {
 		return err
 	}
-	appSecret, err := secret(c.AppSecretEnv)
+	appSecret, err := secret(c.Channel.Feishu.AppSecretEnv)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func RunOAuth(ctx context.Context, path string, input io.Reader, output io.Write
 		return safeOAuthError(err)
 	}
 	defer db.Close()
-	client, err := feishudocs.NewOAuth(db, c.Binding.TenantID, feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: request.OpenID}, appSecret, keys)
+	client, err := feishudocs.NewOAuth(db, c.TenantID, feishudocs.User{AppID: c.AppID, TenantKey: c.feishuBinding().TenantKey, OpenID: request.OpenID}, appSecret, keys)
 	if err != nil {
 		return safeOAuthError(err)
 	}

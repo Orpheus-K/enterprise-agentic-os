@@ -73,7 +73,7 @@ func readRecoveryFile(path string, limit int64) ([]byte, error) {
 }
 
 func (c Config) recoveryBindings() []string {
-	bindings := []string{c.DatabaseURLEnv, c.AppSecretEnv, c.VerificationTokenEnv, c.EncryptKeyEnv, c.Model.APIKeyEnv}
+	bindings := append([]string{c.DatabaseURLEnv, c.Model.APIKeyEnv}, c.Channel.secretRefs()...)
 	if c.Embedding != nil {
 		bindings = append(bindings, c.Embedding.APIKeyEnv)
 	}

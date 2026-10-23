@@ -48,9 +48,9 @@ func sqliteRecoverySite(t *testing.T) (recoveryPlan, recovery.KeyCatalog, []byte
 	}
 	configuration := map[string]any{
 		"storage_driver": "sqlite", "sqlite_path": source,
-		"binding": map[string]any{"tenant_id": "10000000-0000-0000-0000-000000000001", "app_id": "cli_test", "tenant_key": "test"},
-		"mode":    "webhook", "app_secret_env": "APP", "verification_token_env": "TOKEN", "encrypt_key_env": "KEY",
-		"model": map[string]any{"endpoint": "http://127.0.0.1:1/chat/completions", "name": "synthetic", "max_tokens": 64, "allow_http": true},
+		"tenant_id": "10000000-0000-0000-0000-000000000001", "app_id": "cli_test",
+		"channel": map[string]any{"type": "feishu", "tenant_key": "test", "mode": "webhook", "app_secret_env": "APP", "verification_token_env": "TOKEN", "encrypt_key_env": "KEY"},
+		"model":   map[string]any{"endpoint": "http://127.0.0.1:1/chat/completions", "name": "synthetic", "max_tokens": 64, "allow_http": true},
 	}
 	plan := recoveryPlan{Format: 1, Driver: "sqlite", ChannelConfig: filepath.Join(root, "channel.json"), KeyCatalog: filepath.Join(root, "keys.json"), WrappingKeyBinding: "BACKUP_KEY_V1", AuthoritySQLitePath: source}
 	writeRecoveryJSON(t, plan.ChannelConfig, configuration)
@@ -208,7 +208,7 @@ func TestRecoveryAdministrationRejectsInvalidInputs(t *testing.T) {
 
 func TestRecoveryBindingsIncludeAllConfiguredCredentialFamilies(t *testing.T) {
 	c := Config{
-		DatabaseURLEnv: "DB", AppSecretEnv: "APP", VerificationTokenEnv: "TOKEN", EncryptKeyEnv: "KEY",
+		DatabaseURLEnv: "DB", Channel: testFeishu("webhook", "APP", "TOKEN", "KEY"),
 		Model: model.Config{APIKeyEnv: "MODEL"}, Embedding: &model.EmbeddingConfig{APIKeyEnv: "EMBED"},
 		Operations: &OperationsConfig{TokenEnv: "OPS"},
 		Tools:      &ToolsConfig{Credentials: []toolgateway.CredentialBinding{{TokenEnv: "TOOL"}}},

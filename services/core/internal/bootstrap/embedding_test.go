@@ -12,16 +12,15 @@ import (
 	"strings"
 	"testing"
 
-	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/model"
 	"github.com/google/uuid"
 )
 
 func TestEmbeddingConfiguration(t *testing.T) {
 	base := Config{
-		Binding: feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"},
-		Mode:    "websocket", DatabaseURLEnv: "DB_URL", AppSecretEnv: "APP_SECRET",
-		Model: model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "chat", MaxTokens: 64},
+		TenantID: uuid.New(), AppID: "cli_test", Channel: testFeishu("websocket", "APP_SECRET", "", ""),
+		DatabaseURLEnv: "DB_URL",
+		Model:          model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "chat", MaxTokens: 64},
 	}
 	for _, tc := range []struct {
 		name   string
@@ -124,10 +123,10 @@ func TestChannelRejectsMissingEmbeddingSecretBeforeDatabase(t *testing.T) {
 	t.Setenv("AGENTOS_TEST_BOOT_APP", "synthetic-app-secret")
 	t.Setenv("AGENTOS_TEST_BOOT_EMBED", "")
 	c := Config{
-		Binding: feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"},
-		Mode:    "websocket", DatabaseURLEnv: "AGENTOS_TEST_BOOT_DB", AppSecretEnv: "AGENTOS_TEST_BOOT_APP",
-		Model:     model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "chat", MaxTokens: 64},
-		Embedding: &model.EmbeddingConfig{Endpoint: "https://approved.example/v1/embeddings", Name: "embed", Revision: "r1", Dimensions: 3, APIKeyEnv: "AGENTOS_TEST_BOOT_EMBED"},
+		TenantID: uuid.New(), AppID: "cli_test", Channel: testFeishu("websocket", "AGENTOS_TEST_BOOT_APP", "", ""),
+		DatabaseURLEnv: "AGENTOS_TEST_BOOT_DB",
+		Model:          model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "chat", MaxTokens: 64},
+		Embedding:      &model.EmbeddingConfig{Endpoint: "https://approved.example/v1/embeddings", Name: "embed", Revision: "r1", Dimensions: 3, APIKeyEnv: "AGENTOS_TEST_BOOT_EMBED"},
 	}
 	raw, err := json.Marshal(c)
 	if err != nil {

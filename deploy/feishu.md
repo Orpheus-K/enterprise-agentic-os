@@ -5,7 +5,7 @@
 1. 按 [数据库指南](postgres/README.md) 升级至当前制品要求的 schema，使用独立运行账户。
 2. 创建飞书自建应用与机器人，订阅 `im.message.receive_v1`，配置单聊接收与机器人回复权限。只在测试租户验证，不开启无授权知识源或工具。
 3. 由受控管理员预置 IAM 租户、成员与身份映射；Provider=`feishu`，Issuer=`feishu:<AppID>:<TenantKey>`，Subject 为该应用的用户 OpenID。运行账户无 IAM 写权；当前没有自动注册用户或组织同步。
-4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。
+4. 复制 [示例配置](feishu.example.json)，替换安装绑定与获准模型端点。顶层 `tenant_id`、`app_id` 是安装身份；渠道专有设置放在 `channel` 对象，`type` 目前只支持 `feishu`，未知类型拒绝启动。配置仅存环境变量名称，凭证由运行环境注入；不得将实际密钥写入文件或日志。
 
 聊天配置授予已映射且启用的成员使用该安装的纯文本模型能力，不替代知识来源 ACL 或业务写入授权。外部模型需先获准承接消息及拟发送的检索资料；内网无 TLS 模型须显式设置 `allow_http=true`，不得隐式降级。无鉴权内网服务可将 `api_key_env` 设为空字符串；其余命名环境变量缺失即拒绝启动。
 
@@ -44,8 +44,8 @@
 ## 启动入口
 
 - 默认：不设置 `AGENTOS_CHANNEL_CONFIG` 时只启动控制台与存活接口。
-- 长连接：设置配置中的 `mode=websocket`，将 `AGENTOS_CHANNEL_CONFIG` 指向该文件，构建后执行 `pnpm start`；需能访问飞书云端，无需公网回调入口。
-- Webhook：显式改为 `mode=webhook`，注入 Verification Token 与 Encrypt Key；将 HTTPS 反向代理指向 `/api/channels/feishu/events`。需调整 `AGENTOS_HTTP_ADDR` 供受控代理访问。
+- 长连接：设置 `channel.mode=websocket`，将 `AGENTOS_CHANNEL_CONFIG` 指向该文件，构建后执行 `pnpm start`；需能访问飞书云端，无需公网回调入口。
+- Webhook：显式改为 `channel.mode=webhook`，注入 Verification Token 与 Encrypt Key；将 HTTPS 反向代理指向 `/api/channels/feishu/events`。需调整 `AGENTOS_HTTP_ADDR` 供受控代理访问。
 - 验证：单聊机器人发送测试文本；检查 task_id 与 `channel.tasks`/`channel.audit` 状态。收到 ACK 仅表示持久化接收，模型回复异步送达。
 
 一个进程绑定一个安装与一种接入模式；不要为同一应用同时配置两种模式。首期运行单实例；未验收长连接集群所有权或 HA。模式切换共用持久化去重，已受理任务不重复创建。

@@ -85,7 +85,7 @@ func (c Config) validateSources() error {
 			if !user.UseOAuth && !secretReference.MatchString(user.AccessTokenEnv) {
 				return errors.New("source credential environment reference required")
 			}
-			if _, err := feishudocs.NewCredential(feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, "validation-only"); err != nil {
+			if _, err := feishudocs.NewCredential(feishudocs.User{AppID: c.AppID, TenantKey: c.feishuBinding().TenantKey, OpenID: user.OpenID}, "validation-only"); err != nil {
 				return errors.New("invalid source user binding")
 			}
 		}
@@ -145,7 +145,7 @@ func (c Config) sourceCredentials() ([]preparedSource, error) {
 			if err != nil {
 				return feishudocs.Credential{}, err
 			}
-			return feishudocs.NewCredential(feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, token)
+			return feishudocs.NewCredential(feishudocs.User{AppID: c.AppID, TenantKey: c.feishuBinding().TenantKey, OpenID: user.OpenID}, token)
 		}
 		source := preparedSource{config: config, oauthKeys: keys}
 		var err error
@@ -185,7 +185,7 @@ func (c Config) openSources(ctx context.Context, db *database.DB, prepared []pre
 			if !user.UseOAuth {
 				return static, nil
 			}
-			oauth, err := feishudocs.NewOAuth(db, c.Binding.TenantID, feishudocs.User{AppID: c.Binding.AppID, TenantKey: c.Binding.TenantKey, OpenID: user.OpenID}, appSecret, source.oauthKeys)
+			oauth, err := feishudocs.NewOAuth(db, c.TenantID, feishudocs.User{AppID: c.AppID, TenantKey: c.feishuBinding().TenantKey, OpenID: user.OpenID}, appSecret, source.oauthKeys)
 			if err != nil {
 				return feishudocs.Credential{}, err
 			}
@@ -205,11 +205,11 @@ func (c Config) openSources(ctx context.Context, db *database.DB, prepared []pre
 				return nil, err
 			}
 		}
-		store, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+		store, err := knowledge.New(db, c.TenantID, c.AppID)
 		if err != nil {
 			return nil, err
 		}
-		actor := identity.ExternalIdentity{TenantID: c.Binding.TenantID, Provider: "feishu", Issuer: c.Binding.Issuer(), Subject: source.config.Owner.OpenID}
+		actor := identity.ExternalIdentity{TenantID: c.TenantID, Provider: "feishu", Issuer: c.feishuBinding().Issuer(), Subject: source.config.Owner.OpenID}
 		if err := store.CheckSyncSource(ctx, actor, source.config.SourceID); err != nil {
 			return nil, errors.New("source or synchronization identity unavailable")
 		}
@@ -218,11 +218,11 @@ func (c Config) openSources(ctx context.Context, db *database.DB, prepared []pre
 		}); err != nil {
 			return nil, errors.New("source embedding space unavailable or inconsistent")
 		}
-		reader, err := feishudocs.New(c.Binding.AppID)
+		reader, err := feishudocs.New(c.AppID)
 		if err != nil {
 			return nil, err
 		}
-		mapped, err := feishudocs.NewMappedReader(reader, identitypg.New(db), c.Binding.TenantID, c.Binding.TenantKey)
+		mapped, err := feishudocs.NewMappedReader(reader, identitypg.New(db), c.TenantID, c.feishuBinding().TenantKey)
 		if err != nil {
 			return nil, err
 		}

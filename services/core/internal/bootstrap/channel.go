@@ -16,7 +16,6 @@ import (
 	"agentos.local/core/internal/conversation"
 	conversationsqlite "agentos.local/core/internal/conversation/sqlite"
 	"agentos.local/core/internal/database"
-	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/health"
 	"agentos.local/core/internal/identity"
 	"agentos.local/core/internal/knowledge"
@@ -26,28 +25,27 @@ import (
 	"agentos.local/core/internal/sqlitedb"
 	"agentos.local/core/internal/telemetry"
 	"agentos.local/core/internal/toolgateway"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
-	StorageDriver        string                        `json:"storage_driver,omitempty"`
-	SQLitePath           string                        `json:"sqlite_path,omitempty"`
-	QuotationWASMSHA256  string                        `json:"quotation_wasm_sha256,omitempty"`
-	Tools                *ToolsConfig                  `json:"tools,omitempty"`
-	Skills               *SkillsConfig                 `json:"skills,omitempty"`
-	Approval             *conversation.ApprovalPolicy  `json:"approval,omitempty"`
-	Binding              feishu.Binding                `json:"binding"`
-	Mode                 string                        `json:"mode"`
-	DatabaseURLEnv       string                        `json:"database_url_env"`
-	AppSecretEnv         string                        `json:"app_secret_env"`
-	VerificationTokenEnv string                        `json:"verification_token_env"`
-	EncryptKeyEnv        string                        `json:"encrypt_key_env"`
-	Model                model.Config                  `json:"model"`
-	Embedding            *model.EmbeddingConfig        `json:"embedding,omitempty"`
-	Retrieval            *conversation.RetrievalPolicy `json:"retrieval,omitempty"`
-	Operations           *OperationsConfig             `json:"operations,omitempty"`
-	Sources              []SourceConfig                `json:"sources,omitempty"`
-	OAuth                *OAuthConfig                  `json:"oauth,omitempty"`
+	StorageDriver       string                        `json:"storage_driver,omitempty"`
+	SQLitePath          string                        `json:"sqlite_path,omitempty"`
+	QuotationWASMSHA256 string                        `json:"quotation_wasm_sha256,omitempty"`
+	Tools               *ToolsConfig                  `json:"tools,omitempty"`
+	Skills              *SkillsConfig                 `json:"skills,omitempty"`
+	Approval            *conversation.ApprovalPolicy  `json:"approval,omitempty"`
+	TenantID            uuid.UUID                     `json:"tenant_id"`
+	AppID               string                        `json:"app_id"`
+	Channel             ChannelConfig                 `json:"channel"`
+	DatabaseURLEnv      string                        `json:"database_url_env"`
+	Model               model.Config                  `json:"model"`
+	Embedding           *model.EmbeddingConfig        `json:"embedding,omitempty"`
+	Retrieval           *conversation.RetrievalPolicy `json:"retrieval,omitempty"`
+	Operations          *OperationsConfig             `json:"operations,omitempty"`
+	Sources             []SourceConfig                `json:"sources,omitempty"`
+	OAuth               *OAuthConfig                  `json:"oauth,omitempty"`
 }
 type OperationsConfig struct {
 	TokenEnv string `json:"token_env"`
@@ -79,7 +77,7 @@ func Parse(raw []byte) (Config, error) {
 	default:
 		return c, errors.New("unsupported storage_driver")
 	}
-	if err := c.Binding.Validate(); err != nil {
+	if err := c.validateChannel(); err != nil {
 		return c, err
 	}
 	if err := c.Model.Validate(); err != nil {
@@ -100,15 +98,6 @@ func Parse(raw []byte) (Config, error) {
 		if c.Embedding == nil || c.Retrieval.Space.Model != c.Embedding.Name || c.Retrieval.Space.ModelRevision != c.Embedding.Revision {
 			return c, errors.New("retrieval requires matching approved embedding configuration")
 		}
-	}
-	if c.Mode != "websocket" && c.Mode != "webhook" {
-		return c, errors.New("channel mode must be websocket or webhook")
-	}
-	if c.AppSecretEnv == "" {
-		return c, errors.New("app-secret environment reference required")
-	}
-	if c.Mode == "webhook" && (c.VerificationTokenEnv == "" || c.EncryptKeyEnv == "") {
-		return c, errors.New("webhook authentication references required")
 	}
 	if c.Operations != nil {
 		if c.Operations.TokenEnv == "" {
@@ -140,7 +129,7 @@ func Parse(raw []byte) (Config, error) {
 	return c, nil
 }
 func (c Config) operator() identity.ExternalIdentity {
-	return identity.ExternalIdentity{TenantID: c.Binding.TenantID, Provider: "operator", Issuer: "agentos:ops:" + c.Binding.AppID, Subject: c.Operations.Subject}
+	return identity.ExternalIdentity{TenantID: c.TenantID, Provider: "operator", Issuer: "agentos:ops:" + c.AppID, Subject: c.Operations.Subject}
 }
 
 func secret(name string) (string, error) {
@@ -152,16 +141,17 @@ func secret(name string) (string, error) {
 }
 
 type Channel struct {
-	closeStorage    func()
-	adapter         *feishu.Adapter
-	worker          *conversation.Worker
-	mode, appSecret string
-	logger          *slog.Logger
-	Handler         http.Handler
-	Operations      http.Handler
-	Readiness       *health.Readiness
-	telemetry       *telemetry.Telemetry
-	sources         []sourceRunner
+	closeStorage func()
+	transport    transport
+	worker       *conversation.Worker
+	logger       *slog.Logger
+	// Provider names the channel for routing; Handler is nil unless it uses webhook ingress.
+	Provider   string
+	Handler    http.Handler
+	Operations http.Handler
+	Readiness  *health.Readiness
+	telemetry  *telemetry.Telemetry
+	sources    []sourceRunner
 }
 
 func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, error) {
@@ -173,21 +163,12 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	if err != nil {
 		return nil, err
 	}
-	appSecret, err := secret(c.AppSecretEnv)
+	channelSecrets, err := c.Channel.Feishu.loadSecrets()
 	if err != nil {
 		return nil, err
 	}
-	var token, key, modelKey string
-	if c.Mode == "webhook" {
-		token, err = secret(c.VerificationTokenEnv)
-		if err != nil {
-			return nil, err
-		}
-		key, err = secret(c.EncryptKeyEnv)
-		if err != nil {
-			return nil, err
-		}
-	}
+	appSecret := channelSecrets.appSecret
+	var modelKey string
 	if c.Model.APIKeyEnv != "" {
 		modelKey, err = secret(c.Model.APIKeyEnv)
 		if err != nil {
@@ -221,7 +202,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 				logger.Error("SQLite shutdown failed")
 			}
 		}
-		sqliteStore := conversationsqlite.NewInbox(sqliteDB, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+		sqliteStore := conversationsqlite.NewInbox(sqliteDB, c.TenantID, c.AppID, c.executionRevision())
 		if c.Approval != nil {
 			sqliteStore, err = sqliteStore.WithApproval(*c.Approval)
 			if err != nil {
@@ -260,7 +241,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 	// Bind queued work to installation and approved model configuration, independent of transport mode.
 	var gateway *toolgateway.Gateway
 	if db != nil {
-		pgStore := conversation.NewStore(db, c.Binding.TenantID, c.Binding.AppID, c.executionRevision())
+		pgStore := conversation.NewStore(db, c.TenantID, c.AppID, c.executionRevision())
 		if c.QuotationWASMSHA256 != "" {
 			pgStore, err = pgStore.WithQuotationSandbox(c.QuotationWASMSHA256)
 			if err != nil {
@@ -272,7 +253,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 			if err != nil {
 				return nil, err
 			}
-			k, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+			k, err := knowledge.New(db, c.TenantID, c.AppID)
 			if err != nil {
 				return nil, err
 			}
@@ -298,7 +279,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 				if credentialErr != nil {
 					return nil, credentialErr
 				}
-				gateway, err = toolgateway.New(db, c.Binding.TenantID, c.Binding.AppID, registry, c.Tools.Specs, credentials)
+				gateway, err = toolgateway.New(db, c.TenantID, c.AppID, registry, c.Tools.Specs, credentials)
 				if err != nil {
 					return nil, err
 				}
@@ -314,28 +295,20 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		}
 		store = pgStore
 	}
-	adapter, err := feishu.New(c.Binding, token, key, store, tel)
+	ingress, err := newFeishuTransport(c, channelSecrets, store, tel, logger)
 	if err != nil {
 		return nil, err
 	}
-	adapter = adapter.WithApprovals(store)
-	channel := &Channel{closeStorage: closeStorage, adapter: adapter, mode: c.Mode, appSecret: appSecret, logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
+	channel := &Channel{closeStorage: closeStorage, transport: ingress, Provider: ingress.Provider(), Handler: ingress.Handler(), logger: logger, telemetry: tel, Readiness: health.NewReadiness(store.Ready)}
 	if db != nil {
 		channel.sources, err = c.openSources(ctx, db, preparedSources, appSecret)
 		if err != nil {
 			return nil, err
 		}
 	}
-	sender := feishu.NewSender(c.Binding.AppID, appSecret, logger)
-	channel.worker = &conversation.Worker{Store: store, Tools: gateway, Model: modelClient, Sender: sender, Logger: logger, Telemetry: tel}
+	channel.worker = &conversation.Worker{Store: store, Tools: gateway, Model: modelClient, Sender: ingress, Logger: logger, Telemetry: tel}
 	if db != nil {
-		channel.worker.Notifier = sender
-	}
-	if c.Mode == "webhook" {
-		channel.Handler, err = adapter.Webhook()
-		if err != nil {
-			return nil, err
-		}
+		channel.worker.Notifier = ingress
 	}
 	if c.Operations != nil {
 		token, err := secret(c.Operations.TokenEnv)
@@ -348,7 +321,7 @@ func Open(ctx context.Context, path string, logger *slog.Logger) (*Channel, erro
 		}
 		channel.Operations = operationsAPI
 		if db != nil {
-			knowledgeStore, err := knowledge.New(db, c.Binding.TenantID, c.Binding.AppID)
+			knowledgeStore, err := knowledge.New(db, c.TenantID, c.AppID)
 			if err != nil {
 				return nil, err
 			}
@@ -368,9 +341,6 @@ func (c *Channel) Close() {
 }
 func (c *Channel) Run(ctx context.Context) error {
 	defer c.Readiness.SetTransport(health.Stopped)
-	if c.mode == "webhook" {
-		c.Readiness.SetTransport(health.Listening)
-	}
 	group, ctx := errgroup.WithContext(ctx)
 	for _, runner := range c.sources {
 		group.Go(func() error { return c.runSource(ctx, runner) })
@@ -380,9 +350,7 @@ func (c *Channel) Run(ctx context.Context) error {
 		defer c.Readiness.SetWorker(false)
 		return c.worker.Run(ctx)
 	})
-	if c.mode == "websocket" {
-		group.Go(func() error { return c.adapter.LongConnection(ctx, c.appSecret, c.logger, c.Readiness.SetTransport) })
-	}
+	group.Go(func() error { return c.transport.Run(ctx, c.Readiness.SetTransport) })
 	return group.Wait()
 }
 
@@ -394,6 +362,6 @@ type ToolsConfig struct {
 type channelStore interface {
 	conversation.ExecutionStore
 	operations.Store
-	feishu.Inbox
+	Enqueue(context.Context, conversation.Message) error
 	Ready(context.Context) error
 }

@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"agentos.local/core/internal/conversation"
-	"agentos.local/core/internal/feishu"
 	"agentos.local/core/internal/model"
 	"encoding/json"
 	"github.com/google/uuid"
@@ -10,7 +9,7 @@ import (
 )
 
 func TestConfigurationFailsClosed(t *testing.T) {
-	valid := Config{Binding: feishu.Binding{TenantID: uuid.New(), AppID: "cli_test", TenantKey: "tenant"}, Mode: "websocket", DatabaseURLEnv: "DB_URL", AppSecretEnv: "APP_SECRET", Model: model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "approved", MaxTokens: 64}}
+	valid := Config{TenantID: uuid.New(), AppID: "cli_test", Channel: testFeishu("websocket", "APP_SECRET", "", ""), DatabaseURLEnv: "DB_URL", Model: model.Config{Endpoint: "https://approved.example/v1/chat/completions", Name: "approved", MaxTokens: 64}}
 	for _, tc := range []struct {
 		name   string
 		change func(*Config)
@@ -31,9 +30,9 @@ func TestConfigurationFailsClosed(t *testing.T) {
 			c.Approval = &conversation.ApprovalPolicy{MemberID: uuid.New(), TTLSeconds: 3600}
 		}, true},
 		{"valid", func(*Config) {}, true},
-		{"mode", func(c *Config) { c.Mode = "auto" }, false},
-		{"tenant", func(c *Config) { c.Binding.TenantID = uuid.Nil }, false},
-		{"webhook secrets", func(c *Config) { c.Mode = "webhook" }, false},
+		{"mode", func(c *Config) { c.Channel.Feishu.Mode = "auto" }, false},
+		{"tenant", func(c *Config) { c.TenantID = uuid.Nil }, false},
+		{"webhook secrets", func(c *Config) { c.Channel.Feishu.Mode = "webhook" }, false},
 		{"database", func(c *Config) { c.DatabaseURLEnv = "" }, false},
 		{"model", func(c *Config) { c.Model.Name = "" }, false},
 		{"operations secret", func(c *Config) { c.Operations = &OperationsConfig{Subject: "auditor"} }, false},
@@ -41,7 +40,7 @@ func TestConfigurationFailsClosed(t *testing.T) {
 		{"operations enabled", func(c *Config) { c.Operations = &OperationsConfig{TokenEnv: "OPS_TOKEN", Subject: "auditor"} }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := valid
+			c := valid.cloneChannel()
 			tc.change(&c)
 			raw, _ := json.Marshal(c)
 			_, err := Parse(raw)
@@ -56,5 +55,41 @@ func TestConfigurationFailsClosed(t *testing.T) {
 	}
 	if _, err := Parse([]byte(`{"unknown":true}`)); err == nil {
 		t.Fatal("accepted unknown configuration")
+	}
+}
+
+func testFeishu(mode, app, token, key string) ChannelConfig {
+	return ChannelConfig{Type: "feishu", Feishu: &FeishuChannel{TenantKey: "tenant", Mode: mode, AppSecretEnv: app, VerificationTokenEnv: token, EncryptKeyEnv: key}}
+}
+
+// cloneChannel keeps table cases from mutating the shared Feishu settings.
+func (c Config) cloneChannel() Config {
+	if c.Channel.Feishu != nil {
+		f := *c.Channel.Feishu
+		c.Channel.Feishu = &f
+	}
+	return c
+}
+
+func TestChannelTypeIsExplicitAndStrict(t *testing.T) {
+	base := `"tenant_id":"10000000-0000-0000-0000-000000000001","app_id":"cli_test","database_url_env":"DB","model":{"endpoint":"https://approved.example/v1/chat/completions","name":"m","max_tokens":64}`
+	for name, channel := range map[string]string{
+		"unknown type":   `{"type":"dingtalk","mode":"websocket","app_secret_env":"S"}`,
+		"missing type":   `{"tenant_key":"t","mode":"websocket","app_secret_env":"S"}`,
+		"unknown field":  `{"type":"feishu","tenant_key":"t","mode":"websocket","app_secret_env":"S","extra":1}`,
+		"legacy binding": `{"type":"feishu","binding":{"tenant_key":"t"},"mode":"websocket","app_secret_env":"S"}`,
+	} {
+		if _, err := Parse([]byte(`{` + base + `,"channel":` + channel + `}`)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	if _, err := Parse([]byte(`{` + base + `}`)); err == nil {
+		t.Fatal("missing channel accepted")
+	}
+	if _, err := Parse([]byte(`{` + base + `,"mode":"websocket","binding":{"tenant_id":"10000000-0000-0000-0000-000000000001","app_id":"cli_test","tenant_key":"t"},"app_secret_env":"S","channel":{"type":"feishu","tenant_key":"t","mode":"websocket","app_secret_env":"S"}}`)); err == nil {
+		t.Fatal("removed top-level channel fields accepted")
+	}
+	if _, err := Parse([]byte(`{` + base + `,"channel":{"type":"feishu","tenant_key":"t","mode":"websocket","app_secret_env":"S"}}`)); err != nil {
+		t.Fatal(err)
 	}
 }

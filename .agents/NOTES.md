@@ -2,7 +2,7 @@
 
 ## 当前切片：无人值守补齐（2026-10-21）
 
-受测工作树：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-operations-storage`。M1/M2 工程退出证据见 deploy/m1-acceptance.md、deploy/m2-acceptance.md；M3 尚未整体退出，当前差距单点为 [M3 退出差距](../deploy/m3-readiness.md)。当前 PG schema 28、SQLite schema 9（2026-10-22 起任务持久化渠道 Provider，去掉会话核心写死的 "feishu"，见 contracts/identity.md；渠道适配器/来源连接器接口尚未抽取，bootstrap 仍直接装配飞书）。
+受测工作树：`E:/agent-project/.tools/sqlite-approval-verify`，分支 `codex/m3-operations-storage`。M1/M2 工程退出证据见 deploy/m1-acceptance.md、deploy/m2-acceptance.md；M3 尚未整体退出，当前差距单点为 [M3 退出差距](../deploy/m3-readiness.md)。当前 PG schema 28、SQLite schema 9（2026-10-22 起任务持久化渠道 Provider，去掉会话核心写死的 "feishu"，见 contracts/identity.md；渠道经 bootstrap `transport` 接口接入，配置改为顶层 tenant_id/app_id + `channel{type,...}`（破坏性变更，旧 binding/mode 顶层字段已移除；executionRevision 对飞书字节不变，在途任务不孤立）。知识来源连接器接口尚未抽取，来源/OAuth 仍绑定飞书；真实第二渠道未验证。本机无 PowerShell 7，Windows 脚本测试未重跑，pnpm check 未完整通过，已分项跑 lint/test/check:go/离线包安装/PG 集成，日志 m3-channel-iface-*.log）。
 
 用户的 15 项按限定范围落实如下。日志目录均为 `E:/agent-project/.tools/`；已关闭的中间过程、旧失败和历史切片保留在 Git 历史及原日志，不作为当前待办。
 

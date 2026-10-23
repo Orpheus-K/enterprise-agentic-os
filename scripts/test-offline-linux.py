@@ -98,15 +98,16 @@ def main(source: Path) -> None:
         config = {
             "storage_driver": "sqlite",
             "sqlite_path": str(restored),
-            "binding": {
-                "tenant_id": "10000000-0000-0000-0000-000000000001",
-                "app_id": "cli_test",
+            "tenant_id": "10000000-0000-0000-0000-000000000001",
+            "app_id": "cli_test",
+            "channel": {
+                "type": "feishu",
                 "tenant_key": "test",
+                "mode": "webhook",
+                "app_secret_env": "APP",
+                "verification_token_env": "TOKEN",
+                "encrypt_key_env": "KEY",
             },
-            "mode": "webhook",
-            "app_secret_env": "APP",
-            "verification_token_env": "TOKEN",
-            "encrypt_key_env": "KEY",
             "model": {
                 "endpoint": "http://127.0.0.1:1/chat/completions",
                 "name": "synthetic",
